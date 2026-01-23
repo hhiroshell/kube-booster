@@ -1,0 +1,29 @@
+# Git
+.git/
+.gitignore
+
+# Build artifacts
+bin/
+dist/
+_output/
+
+# Test files
+*.test
+coverage.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Documentation
+*.md
+
+# Kubernetes configs
+*.kubeconfig
+
+# Temporary files
+tmp/
+temp/
