@@ -369,7 +369,7 @@ kube-booster.io/warmup: "disabled"
 
 - Review [DEVELOPMENT.md](DEVELOPMENT.md) for building from source and contributing
 - Check [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for technical details
-- See Phase 2 roadmap in [CLAUDE.md](CLAUDE.md) for upcoming features
+- See Phase 2 roadmap in [CLAUDE.md](../CLAUDE.md) for upcoming features
 
 ## Support
 

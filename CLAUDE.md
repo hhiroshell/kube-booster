@@ -6,23 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ALWAYS read and reference these files when working on this codebase:**
 
-1. **DEVELOPMENT.md** - Required reading for all development tasks
+1. **docs/DEVELOPMENT.md** - Required reading for all development tasks
    - Contains project structure, architecture details, and development workflow
    - Explains how components work together
    - Provides debugging tips and best practices
    - **Read this file before making any code changes**
 
-2. **USAGE.md** - Reference when changes affect user-facing features
+2. **docs/USAGE.md** - Reference when changes affect user-facing features
    - Understand how users interact with the project
    - Ensure changes don't break documented behavior
 
-3. **IMPLEMENTATION_SUMMARY.md** - Technical implementation details
+3. **docs/IMPLEMENTATION_SUMMARY.md** - Technical implementation details
    - Phase 1 implementation status
    - Architecture flow and component interactions
    - Test coverage and success criteria
 
 When asked to implement features, fix bugs, or make changes:
-1. First read DEVELOPMENT.md to understand the codebase structure
+1. First read docs/DEVELOPMENT.md to understand the codebase structure
 2. Review relevant sections based on the task
 3. Follow the established patterns and conventions
 4. Update documentation when making user-facing changes
@@ -208,46 +208,46 @@ Key differentiator: kube-booster aims to be a cluster-wide controller solution r
 
 ### Before Starting Any Task
 
-1. **Read DEVELOPMENT.md** - Understand the project structure and development workflow
+1. **Read docs/DEVELOPMENT.md** - Understand the project structure and development workflow
 2. Review the relevant package documentation:
-   - Working on webhook? See `pkg/webhook/` section in DEVELOPMENT.md
-   - Working on controller? See `pkg/controller/` section in DEVELOPMENT.md
-   - Working on main entry point? See `cmd/controller/` section in DEVELOPMENT.md
+   - Working on webhook? See `pkg/webhook/` section in docs/DEVELOPMENT.md
+   - Working on controller? See `pkg/controller/` section in docs/DEVELOPMENT.md
+   - Working on main entry point? See `cmd/controller/` section in docs/DEVELOPMENT.md
 
 ### When Making Changes
 
 **For new features:**
-- Check DEVELOPMENT.md → "Adding New Features" section
+- Check docs/DEVELOPMENT.md → "Adding New Features" section
 - Follow established code patterns
 - Add tests with good coverage
-- Update USAGE.md if user-facing
+- Update docs/USAGE.md if user-facing
 
 **For bug fixes:**
-- Check DEVELOPMENT.md → "Debugging" section
+- Check docs/DEVELOPMENT.md → "Debugging" section
 - Understand the component architecture first
 - Add regression tests
 - Update troubleshooting docs if applicable
 
 **For refactoring:**
-- Review DEVELOPMENT.md → "Architecture Overview"
+- Review docs/DEVELOPMENT.md → "Architecture Overview"
 - Ensure changes maintain existing behavior
 - Run full test suite
 - Update architecture docs if needed
 
 ### Testing Your Changes
 
-Always follow the workflow in DEVELOPMENT.md:
+Always follow the workflow in docs/DEVELOPMENT.md:
 1. Run unit tests: `make test`
 2. Run linter: `make lint`
-3. Test in kind cluster (see DEVELOPMENT.md → "Local Development with kind")
+3. Test in kind cluster (see docs/DEVELOPMENT.md → "Local Development with kind")
 4. Run smoke tests: `./hack/quick_test.sh`
 
 ### Documentation Updates
 
 When you make changes that affect:
-- **User behavior** → Update USAGE.md
-- **Development workflow** → Update DEVELOPMENT.md
-- **Architecture** → Update CLAUDE.md and IMPLEMENTATION_SUMMARY.md
+- **User behavior** → Update docs/USAGE.md
+- **Development workflow** → Update docs/DEVELOPMENT.md
+- **Architecture** → Update CLAUDE.md and docs/IMPLEMENTATION_SUMMARY.md
 - **New annotations/config** → Update all three docs
 
 ### Key Principles
@@ -262,10 +262,10 @@ When you make changes that affect:
 
 | Task | Primary Reference |
 |------|------------------|
-| Setting up dev environment | DEVELOPMENT.md → "Development Environment Setup" |
-| Understanding architecture | DEVELOPMENT.md → "Architecture Overview" |
-| Adding new features | DEVELOPMENT.md → "Adding New Features" |
-| Running tests | DEVELOPMENT.md → "Running Tests" |
-| Debugging issues | DEVELOPMENT.md → "Debugging" |
-| User-facing changes | USAGE.md |
-| Phase 2 planning | CLAUDE.md (this file) + IMPLEMENTATION_SUMMARY.md |
+| Setting up dev environment | docs/DEVELOPMENT.md → "Development Environment Setup" |
+| Understanding architecture | docs/DEVELOPMENT.md → "Architecture Overview" |
+| Adding new features | docs/DEVELOPMENT.md → "Adding New Features" |
+| Running tests | docs/DEVELOPMENT.md → "Running Tests" |
+| Debugging issues | docs/DEVELOPMENT.md → "Debugging" |
+| User-facing changes | docs/USAGE.md |
+| Phase 2 planning | CLAUDE.md (this file) + docs/IMPLEMENTATION_SUMMARY.md |

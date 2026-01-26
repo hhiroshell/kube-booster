@@ -614,7 +614,7 @@ kubectl cluster-info --context kind-kube-booster-dev
 
 ## Next Steps for Phase 2
 
-See [CLAUDE.md](CLAUDE.md) for the complete Phase 2 roadmap. Key areas:
+See [CLAUDE.md](../CLAUDE.md) for the complete Phase 2 roadmap. Key areas:
 
 1. **Warmup Request Execution** (`pkg/warmup/`)
    - HTTP client for warmup requests
