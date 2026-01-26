@@ -43,7 +43,7 @@ _Coming soon_
 
 ### Prerequisites
 
-- Go 1.23 or later
+- Go 1.25 or later
 - Docker (for building container images)
 - kubectl (for deploying to Kubernetes)
 - Access to a Kubernetes cluster

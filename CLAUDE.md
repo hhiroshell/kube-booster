@@ -2,6 +2,31 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Important: Always Reference Documentation
+
+**ALWAYS read and reference these files when working on this codebase:**
+
+1. **DEVELOPMENT.md** - Required reading for all development tasks
+   - Contains project structure, architecture details, and development workflow
+   - Explains how components work together
+   - Provides debugging tips and best practices
+   - **Read this file before making any code changes**
+
+2. **USAGE.md** - Reference when changes affect user-facing features
+   - Understand how users interact with the project
+   - Ensure changes don't break documented behavior
+
+3. **IMPLEMENTATION_SUMMARY.md** - Technical implementation details
+   - Phase 1 implementation status
+   - Architecture flow and component interactions
+   - Test coverage and success criteria
+
+When asked to implement features, fix bugs, or make changes:
+1. First read DEVELOPMENT.md to understand the codebase structure
+2. Review relevant sections based on the task
+3. Follow the established patterns and conventions
+4. Update documentation when making user-facing changes
+
 ## Project Overview
 
 kube-booster is a Kubernetes custom controller that ensures smooth application launches by sending warmup requests to application endpoints before pods transition to READY state. The project helps reduce cold start issues and improves application readiness by pre-warming endpoints.
@@ -164,7 +189,7 @@ make clean
 
 ## Technology Stack
 
-- **Language**: Go 1.23+
+- **Language**: Go 1.25+
 - **Framework**: Standard Kubernetes client-go and controller-runtime (to be added)
 - **Build**: Multi-stage Dockerfile with distroless base image
 - **Deployment**: Standard Kubernetes manifests in config/
@@ -178,3 +203,69 @@ When implementing features, be aware of these similar projects for reference:
 - **BlaBlaCar's warmup solution**: Startup probe-based warmup (internal, not open source)
 
 Key differentiator: kube-booster aims to be a cluster-wide controller solution rather than requiring per-deployment sidecar configuration.
+
+## Working with This Codebase
+
+### Before Starting Any Task
+
+1. **Read DEVELOPMENT.md** - Understand the project structure and development workflow
+2. Review the relevant package documentation:
+   - Working on webhook? See `pkg/webhook/` section in DEVELOPMENT.md
+   - Working on controller? See `pkg/controller/` section in DEVELOPMENT.md
+   - Working on main entry point? See `cmd/controller/` section in DEVELOPMENT.md
+
+### When Making Changes
+
+**For new features:**
+- Check DEVELOPMENT.md → "Adding New Features" section
+- Follow established code patterns
+- Add tests with good coverage
+- Update USAGE.md if user-facing
+
+**For bug fixes:**
+- Check DEVELOPMENT.md → "Debugging" section
+- Understand the component architecture first
+- Add regression tests
+- Update troubleshooting docs if applicable
+
+**For refactoring:**
+- Review DEVELOPMENT.md → "Architecture Overview"
+- Ensure changes maintain existing behavior
+- Run full test suite
+- Update architecture docs if needed
+
+### Testing Your Changes
+
+Always follow the workflow in DEVELOPMENT.md:
+1. Run unit tests: `make test`
+2. Run linter: `make lint`
+3. Test in kind cluster (see DEVELOPMENT.md → "Local Development with kind")
+4. Run smoke tests: `./hack/quick_test.sh`
+
+### Documentation Updates
+
+When you make changes that affect:
+- **User behavior** → Update USAGE.md
+- **Development workflow** → Update DEVELOPMENT.md
+- **Architecture** → Update CLAUDE.md and IMPLEMENTATION_SUMMARY.md
+- **New annotations/config** → Update all three docs
+
+### Key Principles
+
+1. **Follow existing patterns**: This codebase uses controller-runtime patterns extensively
+2. **Test thoroughly**: Maintain >80% coverage for new code
+3. **Document changes**: Keep docs in sync with code
+4. **Security first**: Follow security guidelines in DEVELOPMENT.md
+5. **Performance matters**: Keep webhook <100ms, controller efficient
+
+### Quick Reference
+
+| Task | Primary Reference |
+|------|------------------|
+| Setting up dev environment | DEVELOPMENT.md → "Development Environment Setup" |
+| Understanding architecture | DEVELOPMENT.md → "Architecture Overview" |
+| Adding new features | DEVELOPMENT.md → "Adding New Features" |
+| Running tests | DEVELOPMENT.md → "Running Tests" |
+| Debugging issues | DEVELOPMENT.md → "Debugging" |
+| User-facing changes | USAGE.md |
+| Phase 2 planning | CLAUDE.md (this file) + IMPLEMENTATION_SUMMARY.md |
