@@ -14,14 +14,11 @@ const (
 	// DefaultRequestCount is the default number of warmup requests to send
 	DefaultRequestCount = 3
 
-	// DefaultTimeout is the default timeout for warmup requests
-	DefaultTimeout = 30 * time.Second
+	// DefaultDuration is the default duration for warmup requests
+	DefaultDuration = 30 * time.Second
 
 	// DefaultEndpointPath is the default endpoint path for warmup requests
 	DefaultEndpointPath = "/"
-
-	// DefaultPort is the default port for warmup requests (first container port or 8080)
-	DefaultPort = 8080
 )
 
 // Config holds the warmup configuration parsed from pod annotations
@@ -32,8 +29,8 @@ type Config struct {
 	// RequestCount is the number of warmup requests to send (from kube-booster.io/warmup-requests)
 	RequestCount int
 
-	// Timeout is the total timeout for all warmup requests (from kube-booster.io/warmup-timeout)
-	Timeout time.Duration
+	// Duration is the total duration for all warmup requests (from kube-booster.io/warmup-duration)
+	Duration time.Duration
 
 	// PodIP is the IP address of the pod (set by controller)
 	PodIP string
@@ -53,12 +50,11 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 	config := &Config{
 		Endpoint:     DefaultEndpointPath,
 		RequestCount: DefaultRequestCount,
-		Timeout:      DefaultTimeout,
-		Port:         DefaultPort,
+		Duration:     DefaultDuration,
 	}
 
 	if pod == nil {
-		return config, nil
+		return config, fmt.Errorf("pod is nil, cannot determine warmup port")
 	}
 
 	// Parse annotations if present
@@ -81,28 +77,51 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 			config.RequestCount = reqCount
 		}
 
-		// Parse timeout
-		if timeoutStr, ok := annotations[webhook.AnnotationWarmupTimeout]; ok && timeoutStr != "" {
-			timeout, err := time.ParseDuration(timeoutStr)
+		// Parse duration
+		if durationStr, ok := annotations[webhook.AnnotationWarmupDuration]; ok && durationStr != "" {
+			duration, err := time.ParseDuration(durationStr)
 			if err != nil {
-				return config, fmt.Errorf("invalid warmup-timeout value %q: %w", timeoutStr, err)
+				return config, fmt.Errorf("invalid warmup-duration value %q: %w", durationStr, err)
 			}
-			if timeout < time.Second {
-				return config, fmt.Errorf("warmup-timeout must be at least 1s, got %v", timeout)
+			if duration < time.Second {
+				return config, fmt.Errorf("warmup-duration must be at least 1s, got %v", duration)
 			}
-			config.Timeout = timeout
+			config.Duration = duration
+		}
+
+		// Parse port from annotation
+		if portStr, ok := annotations[webhook.AnnotationWarmupPort]; ok && portStr != "" {
+			port, err := strconv.Atoi(portStr)
+			if err != nil {
+				return config, fmt.Errorf("invalid warmup-port value %q: %w", portStr, err)
+			}
+			if port < 1 || port > 65535 {
+				return config, fmt.Errorf("warmup-port must be between 1 and 65535, got %d", port)
+			}
+			config.Port = port
+			return config, nil
 		}
 	}
 
-	// Try to determine port from container spec
-	if len(pod.Spec.Containers) > 0 {
+	// No port annotation, try to auto-detect from container spec
+	// Only auto-detect when there's exactly 1 container with exactly 1 port
+	if len(pod.Spec.Containers) == 1 {
 		container := pod.Spec.Containers[0]
-		if len(container.Ports) > 0 {
+		if len(container.Ports) == 1 {
 			config.Port = int(container.Ports[0].ContainerPort)
+			return config, nil
+		} else if len(container.Ports) > 1 {
+			return config, fmt.Errorf("container %q has multiple ports, please specify warmup port using annotation %s",
+				container.Name, webhook.AnnotationWarmupPort)
 		}
+	} else if len(pod.Spec.Containers) > 1 {
+		return config, fmt.Errorf("pod has multiple containers, please specify warmup port using annotation %s",
+			webhook.AnnotationWarmupPort)
 	}
 
-	return config, nil
+	// No containers or no ports found
+	return config, fmt.Errorf("cannot determine warmup port: no container ports found, please specify using annotation %s",
+		webhook.AnnotationWarmupPort)
 }
 
 // BuildEndpointURL constructs the full URL for warmup requests

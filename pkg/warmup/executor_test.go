@@ -26,7 +26,7 @@ func TestVegetaExecutor_Execute(t *testing.T) {
 			config: &Config{
 				Endpoint:     "/warmup",
 				RequestCount: 3,
-				Timeout:      5 * time.Second,
+				Duration:     5 * time.Second,
 				PodName:      "test-pod",
 				PodNamespace: "default",
 			},
@@ -46,7 +46,7 @@ func TestVegetaExecutor_Execute(t *testing.T) {
 			config: &Config{
 				Endpoint:     "/warmup",
 				RequestCount: 3,
-				Timeout:      5 * time.Second,
+				Duration:     5 * time.Second,
 				PodName:      "test-pod",
 				PodNamespace: "default",
 			},
@@ -60,7 +60,7 @@ func TestVegetaExecutor_Execute(t *testing.T) {
 			config: &Config{
 				Endpoint:     "/warmup",
 				RequestCount: 3,
-				Timeout:      5 * time.Second,
+				Duration:     5 * time.Second,
 				PodIP:        "", // No IP set
 				PodName:      "test-pod",
 				PodNamespace: "default",
@@ -127,7 +127,7 @@ func TestVegetaExecutor_Execute_ContextCancellation(t *testing.T) {
 	config := &Config{
 		Endpoint:     "/",
 		RequestCount: 10,
-		Timeout:      30 * time.Second,
+		Duration:     30 * time.Second,
 		PodIP:        parts[0],
 		Port:         parsePort(parts[1]),
 		PodName:      "test-pod",
@@ -165,7 +165,7 @@ func TestVegetaExecutor_Execute_MetricsCollection(t *testing.T) {
 	config := &Config{
 		Endpoint:     "/",
 		RequestCount: 5,
-		Timeout:      10 * time.Second,
+		Duration:     10 * time.Second,
 		PodIP:        parts[0],
 		Port:         parsePort(parts[1]),
 		PodName:      "test-pod",

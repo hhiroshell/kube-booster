@@ -32,6 +32,9 @@ func TestPodReconciler_Reconcile(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupPort: "8080",
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -43,6 +46,7 @@ func TestPodReconciler_Reconcile(t *testing.T) {
 				},
 				Status: corev1.PodStatus{
 					Phase: corev1.PodRunning,
+					PodIP: "10.0.0.1",
 					Conditions: []corev1.PodCondition{
 						{
 							Type:   corev1.ContainersReady,
@@ -345,6 +349,7 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 						webhook.AnnotationWarmupEnabled:  "enabled",
 						webhook.AnnotationWarmupEndpoint: "/health",
 						webhook.AnnotationWarmupRequests: "5",
+						webhook.AnnotationWarmupPort:     "8080",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -382,6 +387,9 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupPort: "8080",
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -414,7 +422,7 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 			wantMsgPrefix: "Warmup failed but pod marked ready",
 		},
 		{
-			name: "no executor configured",
+			name: "no executor configured with single container port",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -422,7 +430,13 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
-						{Name: "app", Image: "nginx"},
+						{
+							Name:  "app",
+							Image: "nginx",
+							Ports: []corev1.ContainerPort{
+								{ContainerPort: 8080},
+							},
+						},
 					},
 					ReadinessGates: []corev1.PodReadinessGate{
 						{ConditionType: corev1.PodConditionType(webhook.ReadinessGateName)},
@@ -442,6 +456,38 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 			executor:      nil, // No executor
 			wantReason:    "WarmupComplete",
 			wantMsgPrefix: "warmup skipped",
+		},
+		{
+			name: "config error with multiple containers (fail-open)",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app1", Image: "nginx"},
+						{Name: "app2", Image: "redis"},
+					},
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: corev1.PodConditionType(webhook.ReadinessGateName)},
+					},
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					PodIP: "10.0.0.1",
+					Conditions: []corev1.PodCondition{
+						{Type: corev1.ContainersReady, Status: corev1.ConditionTrue},
+					},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "app1", Ready: true},
+						{Name: "app2", Ready: true},
+					},
+				},
+			},
+			executor:      nil,
+			wantReason:    "WarmupFailedOpen",
+			wantMsgPrefix: "Warmup failed but pod marked ready",
 		},
 	}
 

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -82,14 +83,20 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// Parse warmup configuration from pod annotations
 	config, err := warmup.ParseConfig(pod)
 	if err != nil {
-		logger.Error(err, "failed to parse warmup config, using defaults")
-		// Continue with defaults if parsing fails
-		config = &warmup.Config{
-			Endpoint:     warmup.DefaultEndpointPath,
-			RequestCount: warmup.DefaultRequestCount,
-			Timeout:      warmup.DefaultTimeout,
-			Port:         warmup.DefaultPort,
+		// Config parsing failed (likely port determination issue)
+		// Log error and mark as failed-open
+		logger.Error(err, "failed to parse warmup config")
+		result := &warmup.Result{
+			Success: false,
+			Message: fmt.Sprintf("warmup config error: %v", err),
+			Error:   err,
 		}
+		if setErr := r.setConditionTrue(ctx, pod, result); setErr != nil {
+			logger.Error(setErr, "failed to update pod condition")
+			return ctrl.Result{}, setErr
+		}
+		logger.Info("warmup skipped due to config error (fail-open)", "error", err)
+		return ctrl.Result{}, nil
 	}
 
 	// Set pod information
@@ -97,8 +104,8 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	config.PodName = pod.Name
 	config.PodNamespace = pod.Namespace
 
-	// Execute warmup with timeout
-	warmupCtx, cancel := context.WithTimeout(ctx, config.Timeout)
+	// Execute warmup with duration as context timeout
+	warmupCtx, cancel := context.WithTimeout(ctx, config.Duration)
 	defer cancel()
 
 	var result *warmup.Result

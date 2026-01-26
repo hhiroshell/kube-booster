@@ -19,106 +19,13 @@ func TestParseConfig(t *testing.T) {
 		errContains string
 	}{
 		{
-			name: "nil pod returns defaults",
-			pod:  nil,
-			wantConfig: &Config{
-				Endpoint:     DefaultEndpointPath,
-				RequestCount: DefaultRequestCount,
-				Timeout:      DefaultTimeout,
-				Port:         DefaultPort,
-			},
+			name:        "nil pod returns error",
+			pod:         nil,
+			wantErr:     true,
+			errContains: "pod is nil",
 		},
 		{
-			name: "pod without annotations returns defaults",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
-				},
-			},
-			wantConfig: &Config{
-				Endpoint:     DefaultEndpointPath,
-				RequestCount: DefaultRequestCount,
-				Timeout:      DefaultTimeout,
-				Port:         DefaultPort,
-			},
-		},
-		{
-			name: "custom endpoint",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
-					Annotations: map[string]string{
-						webhook.AnnotationWarmupEndpoint: "/api/warmup",
-					},
-				},
-			},
-			wantConfig: &Config{
-				Endpoint:     "/api/warmup",
-				RequestCount: DefaultRequestCount,
-				Timeout:      DefaultTimeout,
-				Port:         DefaultPort,
-			},
-		},
-		{
-			name: "custom request count",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
-					Annotations: map[string]string{
-						webhook.AnnotationWarmupRequests: "10",
-					},
-				},
-			},
-			wantConfig: &Config{
-				Endpoint:     DefaultEndpointPath,
-				RequestCount: 10,
-				Timeout:      DefaultTimeout,
-				Port:         DefaultPort,
-			},
-		},
-		{
-			name: "custom timeout",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
-					Annotations: map[string]string{
-						webhook.AnnotationWarmupTimeout: "60s",
-					},
-				},
-			},
-			wantConfig: &Config{
-				Endpoint:     DefaultEndpointPath,
-				RequestCount: DefaultRequestCount,
-				Timeout:      60 * time.Second,
-				Port:         DefaultPort,
-			},
-		},
-		{
-			name: "all custom values",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
-					Annotations: map[string]string{
-						webhook.AnnotationWarmupEndpoint: "/health",
-						webhook.AnnotationWarmupRequests: "5",
-						webhook.AnnotationWarmupTimeout:  "15s",
-					},
-				},
-			},
-			wantConfig: &Config{
-				Endpoint:     "/health",
-				RequestCount: 5,
-				Timeout:      15 * time.Second,
-				Port:         DefaultPort,
-			},
-		},
-		{
-			name: "port from container spec",
+			name: "pod with single container and single port auto-detects port",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -130,7 +37,7 @@ func TestParseConfig(t *testing.T) {
 							Name:  "app",
 							Image: "nginx",
 							Ports: []corev1.ContainerPort{
-								{ContainerPort: 3000},
+								{ContainerPort: 8080},
 							},
 						},
 					},
@@ -139,9 +46,173 @@ func TestParseConfig(t *testing.T) {
 			wantConfig: &Config{
 				Endpoint:     DefaultEndpointPath,
 				RequestCount: DefaultRequestCount,
-				Timeout:      DefaultTimeout,
+				Duration:     DefaultDuration,
+				Port:         8080,
+			},
+		},
+		{
+			name: "pod with explicit port annotation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupPort: "3000",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "app",
+							Image: "nginx",
+							Ports: []corev1.ContainerPort{
+								{ContainerPort: 8080},
+								{ContainerPort: 9090},
+							},
+						},
+					},
+				},
+			},
+			wantConfig: &Config{
+				Endpoint:     DefaultEndpointPath,
+				RequestCount: DefaultRequestCount,
+				Duration:     DefaultDuration,
 				Port:         3000,
 			},
+		},
+		{
+			name: "custom endpoint",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupEndpoint: "/api/warmup",
+						webhook.AnnotationWarmupPort:     "8080",
+					},
+				},
+			},
+			wantConfig: &Config{
+				Endpoint:     "/api/warmup",
+				RequestCount: DefaultRequestCount,
+				Duration:     DefaultDuration,
+				Port:         8080,
+			},
+		},
+		{
+			name: "custom request count",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupRequests: "10",
+						webhook.AnnotationWarmupPort:     "8080",
+					},
+				},
+			},
+			wantConfig: &Config{
+				Endpoint:     DefaultEndpointPath,
+				RequestCount: 10,
+				Duration:     DefaultDuration,
+				Port:         8080,
+			},
+		},
+		{
+			name: "custom duration",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupDuration: "60s",
+						webhook.AnnotationWarmupPort:     "8080",
+					},
+				},
+			},
+			wantConfig: &Config{
+				Endpoint:     DefaultEndpointPath,
+				RequestCount: DefaultRequestCount,
+				Duration:     60 * time.Second,
+				Port:         8080,
+			},
+		},
+		{
+			name: "all custom values",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupEndpoint: "/health",
+						webhook.AnnotationWarmupRequests: "5",
+						webhook.AnnotationWarmupDuration: "15s",
+						webhook.AnnotationWarmupPort:     "3000",
+					},
+				},
+			},
+			wantConfig: &Config{
+				Endpoint:     "/health",
+				RequestCount: 5,
+				Duration:     15 * time.Second,
+				Port:         3000,
+			},
+		},
+		{
+			name: "multiple containers without port annotation returns error",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app1", Image: "nginx", Ports: []corev1.ContainerPort{{ContainerPort: 8080}}},
+						{Name: "app2", Image: "redis", Ports: []corev1.ContainerPort{{ContainerPort: 6379}}},
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "pod has multiple containers",
+		},
+		{
+			name: "single container with multiple ports without annotation returns error",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "app",
+							Image: "nginx",
+							Ports: []corev1.ContainerPort{
+								{ContainerPort: 8080},
+								{ContainerPort: 9090},
+							},
+						},
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "container \"app\" has multiple ports",
+		},
+		{
+			name: "no container ports without annotation returns error",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app", Image: "nginx"},
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "cannot determine warmup port",
 		},
 		{
 			name: "invalid request count",
@@ -151,6 +222,7 @@ func TestParseConfig(t *testing.T) {
 					Namespace: "default",
 					Annotations: map[string]string{
 						webhook.AnnotationWarmupRequests: "invalid",
+						webhook.AnnotationWarmupPort:     "8080",
 					},
 				},
 			},
@@ -165,6 +237,7 @@ func TestParseConfig(t *testing.T) {
 					Namespace: "default",
 					Annotations: map[string]string{
 						webhook.AnnotationWarmupRequests: "0",
+						webhook.AnnotationWarmupPort:     "8080",
 					},
 				},
 			},
@@ -172,32 +245,62 @@ func TestParseConfig(t *testing.T) {
 			errContains: "warmup-requests must be at least 1",
 		},
 		{
-			name: "invalid timeout",
+			name: "invalid duration",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
 					Annotations: map[string]string{
-						webhook.AnnotationWarmupTimeout: "invalid",
+						webhook.AnnotationWarmupDuration: "invalid",
+						webhook.AnnotationWarmupPort:     "8080",
 					},
 				},
 			},
 			wantErr:     true,
-			errContains: "invalid warmup-timeout value",
+			errContains: "invalid warmup-duration value",
 		},
 		{
-			name: "timeout too short",
+			name: "duration too short",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
 					Annotations: map[string]string{
-						webhook.AnnotationWarmupTimeout: "500ms",
+						webhook.AnnotationWarmupDuration: "500ms",
+						webhook.AnnotationWarmupPort:     "8080",
 					},
 				},
 			},
 			wantErr:     true,
-			errContains: "warmup-timeout must be at least 1s",
+			errContains: "warmup-duration must be at least 1s",
+		},
+		{
+			name: "invalid port annotation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupPort: "invalid",
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "invalid warmup-port value",
+		},
+		{
+			name: "port out of range",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupPort: "70000",
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "warmup-port must be between 1 and 65535",
 		},
 	}
 
@@ -227,8 +330,8 @@ func TestParseConfig(t *testing.T) {
 			if config.RequestCount != tt.wantConfig.RequestCount {
 				t.Errorf("RequestCount = %v, want %v", config.RequestCount, tt.wantConfig.RequestCount)
 			}
-			if config.Timeout != tt.wantConfig.Timeout {
-				t.Errorf("Timeout = %v, want %v", config.Timeout, tt.wantConfig.Timeout)
+			if config.Duration != tt.wantConfig.Duration {
+				t.Errorf("Duration = %v, want %v", config.Duration, tt.wantConfig.Duration)
 			}
 			if config.Port != tt.wantConfig.Port {
 				t.Errorf("Port = %v, want %v", config.Port, tt.wantConfig.Port)

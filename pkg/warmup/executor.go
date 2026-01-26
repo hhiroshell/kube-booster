@@ -37,12 +37,12 @@ func (e *VegetaExecutor) Execute(ctx context.Context, config *Config) *Result {
 	// Build endpoint URL
 	endpoint := config.BuildEndpointURL()
 
-	e.logger.Info("starting warmup",
+	e.logger.V(1).Info("starting warmup",
 		"pod", config.PodName,
 		"namespace", config.PodNamespace,
 		"endpoint", endpoint,
 		"requestCount", config.RequestCount,
-		"timeout", config.Timeout)
+		"duration", config.Duration)
 
 	// Create target
 	target := vegeta.Target{
@@ -55,13 +55,13 @@ func (e *VegetaExecutor) Execute(ctx context.Context, config *Config) *Result {
 	}
 	targeter := vegeta.NewStaticTargeter(target)
 
-	// Calculate rate: spread RequestCount requests over Timeout duration
+	// Calculate rate: spread RequestCount requests over Duration
 	// Using a steady rate to avoid overwhelming the application
-	rate := vegeta.Rate{Freq: config.RequestCount, Per: config.Timeout}
+	rate := vegeta.Rate{Freq: config.RequestCount, Per: config.Duration}
 
 	// Calculate per-request timeout
 	// Give each request enough time, but cap at a reasonable value
-	perRequestTimeout := config.Timeout / time.Duration(config.RequestCount)
+	perRequestTimeout := config.Duration / time.Duration(config.RequestCount)
 	if perRequestTimeout < time.Second {
 		perRequestTimeout = time.Second
 	}
@@ -78,7 +78,7 @@ func (e *VegetaExecutor) Execute(ctx context.Context, config *Config) *Result {
 
 	go func() {
 		defer close(attackDone)
-		for res := range attacker.Attack(targeter, rate, config.Timeout, "warmup") {
+		for res := range attacker.Attack(targeter, rate, config.Duration, "warmup") {
 			metrics.Add(res)
 		}
 	}()
@@ -91,7 +91,7 @@ func (e *VegetaExecutor) Execute(ctx context.Context, config *Config) *Result {
 		metrics.Close()
 		result.Error = ctx.Err()
 		result.Message = "warmup cancelled"
-		e.logger.Info("warmup cancelled",
+		e.logger.V(1).Info("warmup cancelled",
 			"pod", config.PodName,
 			"reason", ctx.Err())
 		return result
@@ -114,7 +114,7 @@ func (e *VegetaExecutor) Execute(ctx context.Context, config *Config) *Result {
 	result.Success = metrics.Success > 0 // At least some requests succeeded
 	result.Message = result.BuildMessage()
 
-	e.logger.Info("warmup completed",
+	e.logger.V(1).Info("warmup completed",
 		"pod", config.PodName,
 		"namespace", config.PodNamespace,
 		"success", result.Success,
