@@ -33,7 +33,8 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: fmt vet ## Run tests.
-	go test ./... -coverprofile coverage.out
+	# Exclude cmd/ as it has no tests and causes issues with -coverprofile
+	go test $$(go list ./... | grep -v /cmd/) -coverprofile coverage.out
 
 .PHONY: lint
 lint: ## Run golangci-lint against code.
@@ -59,13 +60,25 @@ docker-push: ## Push docker image with the controller.
 
 ##@ Deployment
 
+.PHONY: generate-certs
+generate-certs: ## Generate self-signed certificates for local testing.
+	./hack/generate_certs.sh
+
 .PHONY: deploy
 deploy: ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kubectl apply -f config/
+	kubectl apply -k config/
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config.
-	kubectl delete -f config/
+	kubectl delete -k config/
+
+.PHONY: deploy-sample
+deploy-sample: ## Deploy sample application with warmup enabled.
+	kubectl apply -f config/samples/sample_deployment.yaml
+
+.PHONY: undeploy-sample
+undeploy-sample: ## Remove sample application.
+	kubectl delete -f config/samples/sample_deployment.yaml
 
 ##@ Clean
 

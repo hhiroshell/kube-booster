@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
@@ -5,30 +7,33 @@ run:
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
-    - staticcheck
-    - typecheck
+    - staticcheck  # includes gosimple (merged in v2)
     - unused
-    - gofmt
-    - goimports
     - misspell
     - revive
     - unconvert
     - unparam
+  settings:
+    errcheck:
+      check-blank: true
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    presets: []  # equivalent to exclude-use-default: false
 
-linters-settings:
-  errcheck:
-    check-blank: true
-  goimports:
-    local-prefixes: github.com/hhiroshell/kube-booster
-  revive:
-    rules:
-      - name: exported
-        disabled: true
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/hhiroshell/kube-booster
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
