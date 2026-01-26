@@ -40,3 +40,7 @@ temp/
 
 # Build artifacts
 _output/
+/controller
+
+# Generated certificates for local testing
+certs/
