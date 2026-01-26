@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/hhiroshell/kube-booster/pkg/controller"
+	"github.com/hhiroshell/kube-booster/pkg/warmup"
 	webhookpkg "github.com/hhiroshell/kube-booster/pkg/webhook"
 )
 
@@ -82,10 +83,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create warmup executor
+	warmupExecutor := warmup.NewVegetaExecutor(ctrl.Log.WithName("warmup"))
+
 	// Setup pod controller
 	if err = (&controller.PodReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		WarmupExecutor: warmupExecutor,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
 		os.Exit(1)
