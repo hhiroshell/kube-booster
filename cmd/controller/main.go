@@ -4,15 +4,53 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"github.com/hhiroshell/kube-booster/pkg/controller"
+	webhookpkg "github.com/hhiroshell/kube-booster/pkg/webhook"
 )
 
 var (
-	version = "dev"
+	version  = "dev"
+	scheme   = runtime.NewScheme()
+	setupLog = ctrl.Log.WithName("setup")
 )
 
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(corev1.AddToScheme(scheme))
+}
+
 func main() {
+	var metricsAddr string
+	var enableLeaderElection bool
+	var probeAddr string
+	var webhookPort int
+	var certDir string
 	var showVersion bool
+
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.IntVar(&webhookPort, "webhook-port", 9443, "The port the webhook server binds to.")
+	flag.StringVar(&certDir, "cert-dir", "/tmp/k8s-webhook-server/serving-certs", "The directory containing the webhook TLS certificates.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
+
+	opts := zap.Options{
+		Development: true,
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
+	}
+	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	if showVersion {
@@ -20,6 +58,59 @@ func main() {
 		os.Exit(0)
 	}
 
-	fmt.Println("kube-booster controller starting...")
-	// TODO: Implement controller logic
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	setupLog.Info("starting kube-booster controller",
+		"version", version,
+		"webhook-port", webhookPort,
+		"metrics-addr", metricsAddr,
+	)
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:                 scheme,
+		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
+		HealthProbeBindAddress: probeAddr,
+		LeaderElection:         enableLeaderElection,
+		LeaderElectionID:       "kube-booster.io",
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    webhookPort,
+			CertDir: certDir,
+		}),
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to create manager")
+		os.Exit(1)
+	}
+
+	// Setup pod controller
+	if err = (&controller.PodReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Pod")
+		os.Exit(1)
+	}
+
+	// Setup webhook
+	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
+		Handler: webhookpkg.NewPodMutator(mgr.GetClient(), mgr.GetScheme()),
+	})
+
+	setupLog.Info("registered webhook", "path", "/mutate-v1-pod")
+
+	// Add health check endpoints
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+
+	setupLog.Info("starting manager")
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "problem running manager")
+		os.Exit(1)
+	}
 }
