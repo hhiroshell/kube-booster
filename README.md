@@ -44,7 +44,8 @@ make generate-certs
 make deploy
 
 # Verify installation
-kubectl get deployment -n kube-system kube-booster-controller
+kubectl get deployment -n kube-system kube-booster-webhook
+kubectl get daemonset -n kube-system kube-booster-controller
 ```
 
 See [docs/USAGE.md](docs/USAGE.md) for detailed installation instructions.

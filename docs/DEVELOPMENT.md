@@ -86,8 +86,10 @@ make generate-certs
 make deploy
 
 # Verify deployment
-kubectl get pods -n kube-system -l app=kube-booster-controller
-kubectl logs -n kube-system -l app=kube-booster-controller -f
+kubectl get deployment -n kube-system kube-booster-webhook
+kubectl get daemonset -n kube-system kube-booster-controller
+kubectl logs -n kube-system -l app=kube-booster-webhook -f    # webhook logs
+kubectl logs -n kube-system daemonset/kube-booster-controller -f  # controller logs
 ```
 
 ### 4. Test Your Changes
@@ -113,11 +115,13 @@ vim pkg/controller/pod_controller.go
 make docker-build
 kind load docker-image controller:latest --name kube-booster-dev
 
-# Restart deployment
-kubectl rollout restart deployment kube-booster-controller -n kube-system
+# Restart components
+kubectl rollout restart deployment kube-booster-webhook -n kube-system
+kubectl rollout restart daemonset kube-booster-controller -n kube-system
 
 # Watch logs
-kubectl logs -n kube-system -l app=kube-booster-controller -f
+kubectl logs -n kube-system -l app=kube-booster-webhook -f    # webhook logs
+kubectl logs -n kube-system daemonset/kube-booster-controller -f  # controller logs
 ```
 
 ### 6. Cleanup
@@ -238,11 +242,13 @@ kube-booster/
 │   │   ├── role.yaml
 │   │   └── role_binding.yaml
 │   ├── webhook/                 # Webhook manifests
+│   │   ├── deployment.yaml       # Webhook deployment
 │   │   ├── service.yaml
 │   │   └── mutating_webhook.yaml
+│   ├── controller/              # Controller manifests
+│   │   └── daemonset.yaml        # Controller DaemonSet (node-local)
 │   ├── samples/                 # Sample applications
 │   │   └── sample_deployment.yaml
-│   ├── deployment.yaml          # Controller deployment
 │   └── kustomization.yaml       # Kustomize config
 ├── hack/
 │   ├── generate_certs.sh        # Certificate generation
@@ -440,14 +446,18 @@ Pod becomes READY
 ### Debugging in kind
 
 ```bash
-# View controller logs
-kubectl logs -n kube-system -l app=kube-booster-controller -f
+# View webhook logs
+kubectl logs -n kube-system -l app=kube-booster-webhook -f
+
+# View controller logs (DaemonSet)
+kubectl logs -n kube-system daemonset/kube-booster-controller -f
 
 # Increase verbosity
-kubectl set env deployment/kube-booster-controller -n kube-system VERBOSITY=5
+kubectl set env deployment/kube-booster-webhook -n kube-system VERBOSITY=5
+kubectl set env daemonset/kube-booster-controller -n kube-system VERBOSITY=5
 
 # Check webhook requests
-kubectl logs -n kube-system -l app=kube-booster-controller | grep "mutate-v1-pod"
+kubectl logs -n kube-system -l app=kube-booster-webhook | grep "mutate-v1-pod"
 
 # Inspect pod with issues
 kubectl describe pod <pod-name>
@@ -690,7 +700,6 @@ HTTP warmup execution is complete. See [CLAUDE.md](../CLAUDE.md) for the complet
 
 5. **Architecture Improvements**
    - Webhook config validation at admission time
-   - Split webhook and controller into separate DaemonSet deployments
    - Parallel warmup execution via increased reconcile concurrency
 
 ## Getting Help

@@ -41,20 +41,29 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for instructions on building from source.
 
 ### Verify Installation
 
-Check that the controller is running:
+Check that the webhook and controller are running:
 
 ```bash
-# Check controller deployment
-kubectl get deployment -n kube-system kube-booster-controller
+# Check webhook deployment
+kubectl get deployment -n kube-system kube-booster-webhook
+
+# Check controller DaemonSet
+kubectl get daemonset -n kube-system kube-booster-controller
+
+# View webhook logs
+kubectl logs -n kube-system -l app=kube-booster-webhook -f
 
 # View controller logs
-kubectl logs -n kube-system -l app=kube-booster-controller -f
+kubectl logs -n kube-system daemonset/kube-booster-controller -f
 ```
 
 Expected output:
 ```
-NAME                       READY   UP-TO-DATE   AVAILABLE
-kube-booster-controller    1/1     1            1
+NAME                     READY   UP-TO-DATE   AVAILABLE
+kube-booster-webhook     1/1     1            1
+
+NAME                      DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE
+kube-booster-controller   1         1         1       1            1
 ```
 
 ## Usage
@@ -292,12 +301,13 @@ This script verifies:
 
 Check webhook is running:
 ```bash
-kubectl get pods -n kube-system -l app=kube-booster-controller
+kubectl get deployment -n kube-system kube-booster-webhook
+kubectl get pods -n kube-system -l app=kube-booster-webhook
 ```
 
 Check webhook logs:
 ```bash
-kubectl logs -n kube-system -l app=kube-booster-controller
+kubectl logs -n kube-system -l app=kube-booster-webhook
 ```
 
 Verify webhook configuration:
@@ -323,7 +333,7 @@ kubectl get pod <pod-name> -o jsonpath='{.metadata.annotations}'
 
 Check controller logs:
 ```bash
-kubectl logs -n kube-system -l app=kube-booster-controller -f
+kubectl logs -n kube-system daemonset/kube-booster-controller -f
 ```
 
 Check container status:
@@ -351,7 +361,7 @@ Regenerate certificates:
 ```bash
 kubectl delete secret kube-booster-webhook-cert -n kube-system
 make generate-certs
-kubectl rollout restart deployment kube-booster-controller -n kube-system
+kubectl rollout restart deployment kube-booster-webhook -n kube-system
 ```
 
 Check certificate expiration:
@@ -363,14 +373,17 @@ kubectl get secret kube-booster-webhook-cert -n kube-system -o jsonpath='{.data.
 
 View detailed logs:
 ```bash
-# Follow logs in real-time
-kubectl logs -n kube-system -l app=kube-booster-controller -f
+# Follow webhook logs in real-time
+kubectl logs -n kube-system -l app=kube-booster-webhook -f
 
-# Get recent logs
-kubectl logs -n kube-system -l app=kube-booster-controller --tail=100
+# Follow controller logs in real-time
+kubectl logs -n kube-system daemonset/kube-booster-controller -f
+
+# Get recent controller logs
+kubectl logs -n kube-system daemonset/kube-booster-controller --tail=100
 
 # Check previous instance (if pod restarted)
-kubectl logs -n kube-system -l app=kube-booster-controller --previous
+kubectl logs -n kube-system daemonset/kube-booster-controller --previous
 ```
 
 ## Uninstallation
@@ -390,8 +403,9 @@ kubectl delete secret kube-booster-webhook-cert -n kube-system
 
 Verify removal:
 ```bash
-kubectl get deployment -n kube-system kube-booster-controller
-# Should return: Error from server (NotFound)
+kubectl get deployment -n kube-system kube-booster-webhook
+kubectl get daemonset -n kube-system kube-booster-controller
+# Both should return: Error from server (NotFound)
 ```
 
 ## FAQ
