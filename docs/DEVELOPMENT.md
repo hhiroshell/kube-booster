@@ -160,8 +160,9 @@ go tool cover -html=coverage.out
 ```
 
 Current coverage:
-- `pkg/webhook`: 88.9%
-- `pkg/controller`: 57.4%
+- `pkg/webhook`: 84.2%
+- `pkg/controller`: 68.4%
+- `pkg/warmup`: 92.9%
 
 ### Integration Tests with envtest
 
@@ -222,6 +223,12 @@ kube-booster/
 │   │   ├── pod_controller.go     # Reconciler implementation
 │   │   ├── pod_controller_test.go
 │   │   └── predicates.go         # Event filters
+│   ├── warmup/
+│   │   ├── config.go             # Configuration parsing
+│   │   ├── config_test.go
+│   │   ├── executor.go           # Vegeta executor implementation
+│   │   ├── executor_test.go
+│   │   └── result.go             # Warmup result structure
 │   └── webhook/
 │       ├── constants.go          # Shared constants
 │       ├── pod_mutator.go        # Webhook handler
@@ -270,7 +277,8 @@ kube-booster/
 - Implements `reconcile.Reconciler` interface
 - Watches pods with our readiness gate
 - Checks if containers are ready
-- Updates pod condition when ready
+- Executes warmup requests before marking ready
+- Updates pod condition when warmup completes
 
 **Key methods:**
 - `Reconcile(ctx, req)` - Main reconciliation loop
@@ -282,6 +290,39 @@ kube-booster/
 **predicates.go**
 - `HasReadinessGatePredicate()` - Filters events for relevant pods
 - Only reconciles pods with our readiness gate
+
+#### Warmup Package (pkg/warmup/)
+
+**config.go**
+- `Config` struct holds parsed warmup configuration
+- `ParseConfig(pod)` parses annotations into Config:
+  - `kube-booster.io/warmup-endpoint` → Endpoint path (default: `/`)
+  - `kube-booster.io/warmup-requests` → Request count (default: `3`)
+  - `kube-booster.io/warmup-duration` → Duration (default: `30s`)
+  - `kube-booster.io/warmup-port` → Port (auto-detected if possible)
+- Auto-detects port from container spec (single container, single port)
+- Validates numeric values and duration format
+- `BuildEndpointURL()` constructs full URL for requests
+
+**executor.go**
+- `Executor` interface for warmup implementations
+- `VegetaExecutor` uses Vegeta load testing library
+- Calculates request rate: `RequestCount / Duration`
+- Per-request timeout: 1s minimum, scales with rate
+- Adds custom headers:
+  - `User-Agent: kube-booster/1.0`
+  - `X-Warmup-Request: true`
+- Context-aware cancellation support
+
+**result.go**
+- `Result` struct tracks warmup outcome:
+  - `Success` - Whether warmup met success threshold
+  - `RequestCount` - Completed requests
+  - `FailedCount` - Failed requests
+  - `LatencyP50` / `LatencyP99` - Latency percentiles
+  - `SuccessRate` - Percentage of successful requests
+  - `Message` - Human-readable summary
+- `String()` method for formatted logging
 
 #### Main Entry Point (cmd/controller/main.go)
 
@@ -442,6 +483,18 @@ go run cmd/controller/main.go --webhook-port=9443 --metrics-bind-address=:8080
 - Check RBAC permissions
 - Verify predicates are not filtering out pods
 - Check pod has our readiness gate in spec
+
+**Warmup failing:**
+- Check pod has IP assigned (`kubectl get pod -o wide`)
+- Verify warmup endpoint responds (`kubectl exec` to curl)
+- Check port annotation if container has multiple ports
+- Review controller logs for warmup result details
+- Verify the endpoint path is correct (default is `/`)
+
+**Warmup port not detected:**
+- Error: "cannot determine warmup port"
+- Solution: Add `kube-booster.io/warmup-port` annotation
+- Auto-detection only works with single container having single port
 
 **Tests failing:**
 - Run `go mod tidy` to sync dependencies
@@ -612,29 +665,29 @@ kubectl cluster-info --context kind-kube-booster-dev
 - [Kubernetes readiness gates](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-readiness-gate)
 - [Kubebuilder book](https://book.kubebuilder.io/)
 
-## Next Steps for Phase 2
+## Future Development (Phase 3+)
 
-See [CLAUDE.md](../CLAUDE.md) for the complete Phase 2 roadmap. Key areas:
+Phase 2 HTTP warmup execution is complete. See [CLAUDE.md](../CLAUDE.md) for the complete roadmap. Future areas:
 
-1. **Warmup Request Execution** (`pkg/warmup/`)
-   - HTTP client for warmup requests
-   - gRPC support
+1. **gRPC Support**
+   - Add gRPC warmup capability
+   - Protocol detection from annotations
+
+2. **Observability Enhancements**
+   - Prometheus metrics export
+   - Kubernetes events for warmup results
+   - Distributed tracing integration
+
+3. **Advanced Features**
+   - `WarmupConfig` CRD for complex scenarios
+   - Multiple sequential warmup endpoints
+   - Custom request bodies (POST support)
    - Retry logic with exponential backoff
 
-2. **Configuration Parsing**
-   - Parse warmup annotations
-   - Validate configuration
-   - Apply defaults
-
-3. **Observability**
-   - Prometheus metrics
-   - Structured logging
-   - Event recording
-
-4. **Advanced Features**
-   - CRD for complex warmup scenarios
-   - Multiple warmup endpoints
-   - Custom warmup logic
+4. **Production Hardening**
+   - High availability (leader election improvements)
+   - Automated certificate rotation
+   - Rate limiting for warmup requests
 
 ## Getting Help
 

@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - Ensure changes don't break documented behavior
 
 3. **docs/IMPLEMENTATION_SUMMARY.md** - Technical implementation details
-   - Phase 1 implementation status
+   - Phase 1 and Phase 2 implementation status
    - Architecture flow and component interactions
    - Test coverage and success criteria
 
@@ -44,7 +44,7 @@ This controller is designed to intercept the Kubernetes pod readiness process us
 
 Application owners control warmup behavior through **pod annotations**. This provides a simple, declarative way to enable/disable warmup without requiring additional resources.
 
-#### Phase 1: Annotation-Based Configuration (Current Implementation Target)
+#### Phase 1 & 2: Annotation-Based Configuration (Implemented)
 
 **Enable warmup with annotations:**
 ```yaml
@@ -60,21 +60,23 @@ spec:
         kube-booster.io/warmup: "enabled"
 
         # Configuration (optional, uses defaults if not specified)
-        kube-booster.io/warmup-endpoint: "http://localhost:8080/warmup"
-        kube-booster.io/warmup-requests: "5"
-        kube-booster.io/warmup-timeout: "30s"
+        kube-booster.io/warmup-endpoint: "/warmup"    # HTTP endpoint path
+        kube-booster.io/warmup-requests: "5"          # Number of requests
+        kube-booster.io/warmup-duration: "30s"        # Total duration
+        kube-booster.io/warmup-port: "8080"           # Container port (auto-detected if single)
 ```
 
-**Safety Defaults (Phase 1):**
-- Default timeout: 30s
+**Defaults:**
+- Default duration: 30s
 - Default requests: 3
-- Default endpoint: Falls back to readiness probe path if not specified
-- Fail-open behavior: If warmup fails after retries, still mark pod as ready (with warning event/log)
+- Default endpoint: `/`
+- Default port: Auto-detected from container spec (single container with single port)
+- Fail-open behavior: If warmup fails, still mark pod as ready (with warning log)
 
 **Opt-out:**
 Pods without the `kube-booster.io/warmup: "enabled"` annotation are not affected by the controller.
 
-#### Phase 2: CRD for Complex Configuration (Future)
+#### Future: CRD for Complex Configuration
 
 For advanced warmup scenarios, a `WarmupConfig` CRD will be introduced:
 ```yaml
@@ -122,9 +124,10 @@ The controller follows the standard Kubernetes controller pattern with readiness
 1. **Mutating webhook** inspects pod creation events
 2. If pod has `kube-booster.io/warmup: "enabled"`, inject readiness gate: `kube-booster.io/warmup-ready`
 3. **Controller** watches pods with the injected readiness gate
-4. Controller sends warmup requests based on annotations (Phase 1) or WarmupConfig (Phase 2)
-5. Controller updates pod condition `kube-booster.io/warmup-ready` to `True` when warmup completes
-6. Kubernetes marks pod as READY only after all readiness gates are satisfied
+4. Controller waits for containers to be ready, then parses warmup config from annotations
+5. Controller sends HTTP warmup requests using Vegeta load testing library
+6. Controller updates pod condition `kube-booster.io/warmup-ready` to `True` when warmup completes (or on failure, fail-open)
+7. Kubernetes marks pod as READY only after all readiness gates are satisfied
 
 ## Development Commands
 
@@ -268,4 +271,4 @@ When you make changes that affect:
 | Running tests | docs/DEVELOPMENT.md → "Running Tests" |
 | Debugging issues | docs/DEVELOPMENT.md → "Debugging" |
 | User-facing changes | docs/USAGE.md |
-| Phase 2 planning | CLAUDE.md (this file) + docs/IMPLEMENTATION_SUMMARY.md |
+| Future planning | CLAUDE.md (this file) + docs/IMPLEMENTATION_SUMMARY.md |
