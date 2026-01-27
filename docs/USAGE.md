@@ -429,7 +429,7 @@ kube-booster uses **fail-open behavior**: if warmup fails (e.g., connection erro
 
 ### How does port auto-detection work?
 
-If your container has exactly one port defined, kube-booster automatically uses that port for warmup requests. If your container has multiple ports, you must specify the port using the `kube-booster.io/warmup-port` annotation.
+If your pod has exactly one container with exactly one port defined, kube-booster automatically uses that port for warmup requests. If your pod has multiple containers or multiple ports, you must specify the port using the `kube-booster.io/warmup-port` annotation.
 
 ### How are warmup requests distributed?
 
