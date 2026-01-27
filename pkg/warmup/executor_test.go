@@ -207,22 +207,3 @@ func parsePort(s string) int {
 	}
 	return port
 }
-
-func TestMockExecutor(t *testing.T) {
-	mock := &MockExecutor{
-		Result: &Result{
-			Success:           true,
-			RequestsCompleted: 5,
-			Message:           "test warmup",
-		},
-	}
-
-	result := mock.Execute(context.Background(), &Config{})
-
-	if !result.Success {
-		t.Error("MockExecutor.Execute() Success = false, want true")
-	}
-	if result.RequestsCompleted != 5 {
-		t.Errorf("MockExecutor.Execute() RequestsCompleted = %d, want 5", result.RequestsCompleted)
-	}
-}

@@ -104,8 +104,10 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	config.PodName = pod.Name
 	config.PodNamespace = pod.Namespace
 
-	// Execute warmup with duration as context timeout
-	warmupCtx, cancel := context.WithTimeout(ctx, config.Duration)
+	// Execute warmup with context timeout slightly longer than duration
+	// to allow Vegeta to finish cleanly after the attack completes
+	contextTimeout := config.Duration + 5*time.Second
+	warmupCtx, cancel := context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
 
 	var result *warmup.Result
