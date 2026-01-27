@@ -688,6 +688,11 @@ HTTP warmup execution is complete. See [CLAUDE.md](../CLAUDE.md) for the complet
    - Automated certificate rotation
    - Rate limiting for warmup requests
 
+5. **Architecture Improvements**
+   - Webhook config validation at admission time
+   - Split webhook and controller into separate DaemonSet deployments
+   - Parallel warmup execution via increased reconcile concurrency
+
 ## Getting Help
 
 - Check [USAGE.md](USAGE.md) for user documentation

@@ -301,6 +301,9 @@ Future enhancements:
 6. **Custom Request Bodies**: Support POST requests with custom payloads
 7. **Health Check Integration**: Optionally use readiness probe path as default endpoint
 8. **Distributed Tracing**: Add trace context to warmup requests
+9. **Webhook Config Validation**: Validate warmup annotation values at admission time
+10. **Architecture Separation**: Split webhook and controller into separate DaemonSet deployments for better scalability
+11. **Parallel Warmup Execution**: Increase controller-runtime reconcile concurrency for parallel warmup processing
 
 ## Testing Recommendations
 
