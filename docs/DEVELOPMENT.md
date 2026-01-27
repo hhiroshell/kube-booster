@@ -164,19 +164,18 @@ Current coverage:
 - `pkg/controller`: 68.4%
 - `pkg/warmup`: 92.9%
 
-### Integration Tests with envtest
+### Running Tests
 
-The tests use controller-runtime's envtest which provides a real Kubernetes API server:
+The tests use controller-runtime's fake client for unit testing. No external dependencies or setup required.
 
 ```bash
-# Install setup-envtest tool
-go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-
-# Download test binaries
-setup-envtest use
-
-# Run tests
+# Run all tests
 make test
+
+# Run tests for a specific package
+go test ./pkg/controller/... -v
+go test ./pkg/webhook/... -v
+go test ./pkg/warmup/... -v
 ```
 
 ## Code Quality
@@ -498,7 +497,7 @@ go run cmd/controller/main.go --webhook-port=9443 --metrics-bind-address=:8080
 
 **Tests failing:**
 - Run `go mod tidy` to sync dependencies
-- Check envtest binaries are installed
+- Ensure all dependencies are installed (`go mod download`)
 - Verify Go version is 1.25+
 
 ## CI/CD
