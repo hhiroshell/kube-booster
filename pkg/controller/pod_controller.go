@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -12,13 +13,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/hhiroshell/kube-booster/pkg/warmup"
 	"github.com/hhiroshell/kube-booster/pkg/webhook"
 )
 
 // PodReconciler reconciles pods with warmup readiness gates
 type PodReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme         *runtime.Scheme
+	WarmupExecutor warmup.Executor
 }
 
 // Reconcile handles pod reconciliation
@@ -74,13 +77,63 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	// All conditions met, set our condition to True
-	if err := r.setConditionTrue(ctx, pod); err != nil {
+	// All conditions met, execute warmup
+	logger.Info("starting warmup execution", "pod", pod.Name, "namespace", pod.Namespace)
+
+	// Parse warmup configuration from pod annotations
+	config, err := warmup.ParseConfig(pod)
+	if err != nil {
+		// Config parsing failed (likely port determination issue)
+		// Log error and mark as failed-open
+		logger.Error(err, "failed to parse warmup config")
+		result := &warmup.Result{
+			Success: false,
+			Message: fmt.Sprintf("warmup config error: %v", err),
+			Error:   err,
+		}
+		if setErr := r.setConditionTrue(ctx, pod, result); setErr != nil {
+			logger.Error(setErr, "failed to update pod condition")
+			return ctrl.Result{}, setErr
+		}
+		logger.Info("warmup skipped due to config error (fail-open)", "error", err)
+		return ctrl.Result{}, nil
+	}
+
+	// Set pod information
+	config.PodIP = pod.Status.PodIP
+	config.PodName = pod.Name
+	config.PodNamespace = pod.Namespace
+
+	// Execute warmup with context timeout slightly longer than duration
+	// to allow Vegeta to finish cleanly after the attack completes
+	contextTimeout := config.Duration + 5*time.Second
+	warmupCtx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+
+	var result *warmup.Result
+	if r.WarmupExecutor != nil {
+		result = r.WarmupExecutor.Execute(warmupCtx, config)
+	} else {
+		// No executor configured, skip warmup
+		result = &warmup.Result{
+			Success: true,
+			Message: "warmup skipped: no executor configured",
+		}
+		logger.Info("warmup skipped: no executor configured")
+	}
+
+	// Set condition to True (fail-open behavior: always True even if warmup fails)
+	if err := r.setConditionTrue(ctx, pod, result); err != nil {
 		logger.Error(err, "failed to update pod condition")
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("warmup readiness gate condition set to True")
+	if result.Success {
+		logger.Info("warmup completed successfully", "message", result.Message)
+	} else {
+		logger.Info("warmup completed with issues (fail-open)", "message", result.Message, "error", result.Error)
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -105,9 +158,21 @@ func (r *PodReconciler) areContainersReady(pod *corev1.Pod) bool {
 }
 
 // setConditionTrue updates the pod condition to True
-func (r *PodReconciler) setConditionTrue(ctx context.Context, pod *corev1.Pod) error {
+func (r *PodReconciler) setConditionTrue(ctx context.Context, pod *corev1.Pod, result *warmup.Result) error {
 	// Create a copy for update
 	podCopy := pod.DeepCopy()
+
+	// Determine reason and message based on warmup result
+	reason := "WarmupComplete"
+	message := "Warmup readiness check passed"
+	if result != nil {
+		if result.Success {
+			message = result.Message
+		} else {
+			reason = "WarmupFailedOpen"
+			message = "Warmup failed but pod marked ready (fail-open): " + result.Message
+		}
+	}
 
 	// Find and update or add the condition
 	conditionUpdated := false
@@ -115,8 +180,8 @@ func (r *PodReconciler) setConditionTrue(ctx context.Context, pod *corev1.Pod) e
 		if string(condition.Type) == webhook.ConditionTypeWarmupReady {
 			podCopy.Status.Conditions[i].Status = corev1.ConditionTrue
 			podCopy.Status.Conditions[i].LastTransitionTime = metav1.Now()
-			podCopy.Status.Conditions[i].Reason = "WarmupComplete"
-			podCopy.Status.Conditions[i].Message = "Warmup readiness check passed"
+			podCopy.Status.Conditions[i].Reason = reason
+			podCopy.Status.Conditions[i].Message = message
 			conditionUpdated = true
 			break
 		}
@@ -128,8 +193,8 @@ func (r *PodReconciler) setConditionTrue(ctx context.Context, pod *corev1.Pod) e
 			Type:               corev1.PodConditionType(webhook.ConditionTypeWarmupReady),
 			Status:             corev1.ConditionTrue,
 			LastTransitionTime: metav1.Now(),
-			Reason:             "WarmupComplete",
-			Message:            "Warmup readiness check passed",
+			Reason:             reason,
+			Message:            message,
 		}
 		podCopy.Status.Conditions = append(podCopy.Status.Conditions, newCondition)
 	}

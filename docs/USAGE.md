@@ -6,10 +6,10 @@ This guide shows you how to deploy and use kube-booster in your Kubernetes clust
 
 kube-booster is a Kubernetes controller that ensures smooth application launches by managing warmup readiness gates. It prevents pods from receiving traffic until they are fully warmed up.
 
-**Phase 1 Status**: Currently establishes the infrastructure for warmup functionality:
-- Mutating webhook injects readiness gates for annotated pods
-- Controller sets readiness gate condition to True when containers are ready
-- Actual warmup request execution will be added in Phase 2
+**Current Status**: Phase 1 and Phase 2 are implemented:
+- **Phase 1**: Mutating webhook injects readiness gates for annotated pods
+- **Phase 2**: Controller sends HTTP warmup requests using Vegeta before marking pods ready
+- Fail-open behavior ensures pods become ready even if warmup fails
 
 ## Prerequisites
 
@@ -96,10 +96,11 @@ spec:
 
 | Annotation | Description | Default | Status |
 |------------|-------------|---------|--------|
-| `kube-booster.io/warmup` | Enable/disable warmup | `disabled` | ✅ Phase 1 |
-| `kube-booster.io/warmup-endpoint` | Warmup endpoint URL | Readiness probe path | 🔜 Phase 2 |
-| `kube-booster.io/warmup-requests` | Number of warmup requests | `3` | 🔜 Phase 2 |
-| `kube-booster.io/warmup-timeout` | Warmup timeout duration | `30s` | 🔜 Phase 2 |
+| `kube-booster.io/warmup` | Enable/disable warmup (`enabled`/`disabled`) | `disabled` | ✅ Phase 1 |
+| `kube-booster.io/warmup-endpoint` | HTTP endpoint path for warmup requests | `/` | ✅ Phase 2 |
+| `kube-booster.io/warmup-requests` | Number of warmup requests to send | `3` | ✅ Phase 2 |
+| `kube-booster.io/warmup-duration` | Total duration for warmup (e.g., `30s`, `1m`) | `30s` | ✅ Phase 2 |
+| `kube-booster.io/warmup-port` | Container port for warmup requests | Auto-detected | ✅ Phase 2 |
 
 ### Example: Complete Application
 
@@ -140,6 +141,51 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
 ```
+
+### Advanced Configuration
+
+For applications that need customized warmup behavior, use all available annotations:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-api-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-api
+  template:
+    metadata:
+      labels:
+        app: my-api
+      annotations:
+        # Enable warmup
+        kube-booster.io/warmup: "enabled"
+        # Send warmup requests to the /warmup endpoint
+        kube-booster.io/warmup-endpoint: "/warmup"
+        # Send 10 warmup requests
+        kube-booster.io/warmup-requests: "10"
+        # Spread requests over 60 seconds
+        kube-booster.io/warmup-duration: "60s"
+        # Use port 8080 (required for multi-port containers)
+        kube-booster.io/warmup-port: "8080"
+    spec:
+      containers:
+      - name: api-server
+        image: my-api:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9090
+          name: metrics
+```
+
+**Notes:**
+- **Port auto-detection**: If your container has exactly one port, kube-booster will automatically detect it. Specify `warmup-port` explicitly when containers have multiple ports.
+- **Request rate**: Requests are distributed evenly across the duration. For example, 10 requests over 60s = 1 request every 6 seconds.
+- **Custom headers**: All warmup requests include `User-Agent: kube-booster/1.0` and `X-Warmup-Request: true` headers.
 
 ## Verification
 
@@ -210,7 +256,19 @@ This script verifies:
 ┌─────────────────────────────────────────────────────────────┐
 │  Controller watches pod (via event filters)                │
 │  → Waits for containers to be ready                       │
-│  → Sets condition kube-booster.io/warmup-ready = True     │
+└──────────────────────┬──────────────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Controller executes warmup requests using Vegeta          │
+│  → Parses configuration from annotations                  │
+│  → Sends HTTP requests to pod endpoint                    │
+│  → Logs metrics: latencies (P50/P99), success rate        │
+└──────────────────────┬──────────────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Controller sets condition kube-booster.io/warmup-ready    │
+│  → Success: condition = True                              │
+│  → Failure: condition = True (fail-open) with warning log │
 └──────────────────────┬──────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -364,6 +422,28 @@ Simply remove the annotation or set it to a value other than `"enabled"`:
 ```yaml
 kube-booster.io/warmup: "disabled"
 ```
+
+### What happens if warmup fails?
+
+kube-booster uses **fail-open behavior**: if warmup fails (e.g., connection errors, non-200 responses), the pod is still marked as ready. A warning log is emitted with details about the failure. This ensures warmup issues don't prevent pods from becoming ready.
+
+### How does port auto-detection work?
+
+If your pod has exactly one container with exactly one port defined, kube-booster automatically uses that port for warmup requests. If your pod has multiple containers or multiple ports, you must specify the port using the `kube-booster.io/warmup-port` annotation.
+
+### How are warmup requests distributed?
+
+Requests are sent at a steady rate calculated as: `request_count / duration`. For example:
+- 3 requests over 30s = 1 request every 10 seconds
+- 10 requests over 60s = 1 request every 6 seconds
+
+### What metrics are logged during warmup?
+
+After warmup completes, the controller logs:
+- Total requests sent
+- Success/failure count
+- P50 and P99 latencies
+- Overall success rate
 
 ## Next Steps
 

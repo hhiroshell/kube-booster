@@ -18,14 +18,17 @@ spec:
         # Enable warmup for this pod
         kube-booster.io/warmup: "enabled"
 
-        # Optional: Configure warmup endpoint (defaults to readiness probe path)
-        # kube-booster.io/warmup-endpoint: "http://localhost:8080/warmup"
+        # Optional: Warmup endpoint path (default: "/")
+        # kube-booster.io/warmup-endpoint: "/warmup"
 
         # Optional: Number of warmup requests (default: 3)
         # kube-booster.io/warmup-requests: "5"
 
-        # Optional: Warmup timeout (default: 30s)
-        # kube-booster.io/warmup-timeout: "30s"
+        # Optional: Total warmup duration (default: 30s)
+        # kube-booster.io/warmup-duration: "30s"
+
+        # Optional: Port for warmup requests (auto-detected if single container with single port)
+        # kube-booster.io/warmup-port: "8080"
     spec:
       containers:
       - name: nginx

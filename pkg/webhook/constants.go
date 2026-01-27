@@ -10,8 +10,11 @@ const (
 	// AnnotationWarmupRequests is the annotation key to specify the number of warmup requests
 	AnnotationWarmupRequests = "kube-booster.io/warmup-requests"
 
-	// AnnotationWarmupTimeout is the annotation key to specify the warmup timeout
-	AnnotationWarmupTimeout = "kube-booster.io/warmup-timeout"
+	// AnnotationWarmupDuration is the annotation key to specify the warmup duration
+	AnnotationWarmupDuration = "kube-booster.io/warmup-duration"
+
+	// AnnotationWarmupPort is the annotation key to specify the warmup port
+	AnnotationWarmupPort = "kube-booster.io/warmup-port"
 
 	// ReadinessGateName is the name of the readiness gate injected into pods
 	ReadinessGateName = "kube-booster.io/warmup-ready"
