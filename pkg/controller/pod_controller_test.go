@@ -441,6 +441,9 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupEnabled: "enabled",
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -477,6 +480,9 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupEnabled: "enabled",
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -509,6 +515,9 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupEnabled: "enabled",
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
