@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - Ensure changes don't break documented behavior
 
 3. **docs/IMPLEMENTATION_SUMMARY.md** - Technical implementation details
-   - Phase 1 and Phase 2 implementation status
+   - Current implementation status
    - Architecture flow and component interactions
    - Test coverage and success criteria
 
@@ -44,7 +44,7 @@ This controller is designed to intercept the Kubernetes pod readiness process us
 
 Application owners control warmup behavior through **pod annotations**. This provides a simple, declarative way to enable/disable warmup without requiring additional resources.
 
-#### Phase 1 & 2: Annotation-Based Configuration (Implemented)
+#### Annotation-Based Configuration
 
 **Enable warmup with annotations:**
 ```yaml

@@ -1,99 +1,168 @@
-# kube-booster
+# 🚀 Kube Booster
 
 A Kubernetes custom controller that ensures smooth application launches by sending warmup requests to application endpoints before pods transition to READY state.
 
-## Overview
+## 📖 Overview
 
-kube-booster helps reduce cold start issues and improves application readiness by pre-warming application endpoints. This is particularly useful for applications that need time to initialize caches, load data, or perform JIT compilation before serving production traffic efficiently.
+Kube Booster helps reduce cold start issues and improves application readiness by pre-warming application endpoints. This is particularly useful for applications that need time to initialize caches, load data, or perform JIT compilation before serving production traffic efficiently.
 
-## Features
+## ✨ Features
 
-- Sends warmup requests to application endpoints before pod status becomes READY
-- Configurable warmup strategies and request patterns
-- Integrates seamlessly with Kubernetes pod lifecycle
-- Helps reduce cold start latency for production traffic
+- **Mutating Webhook**: Automatically injects readiness gates for annotated pods
+- **HTTP Warmup Requests**: Sends configurable warmup requests using Vegeta load testing library
+- **Annotation-Based Configuration**: Simple opt-in via pod annotations
+- **Fail-Open Behavior**: Pods become ready even if warmup fails (with warning logs)
+- **Port Auto-Detection**: Automatically detects container port for single-port containers
+- **Metrics Logging**: Logs P50/P99 latencies and success rates after warmup
 
-## How It Works
+## 🔧 How It Works
 
-kube-booster watches for new pods and intercepts the readiness check process. Before marking a pod as READY:
+Kube Booster watches for new pods and intercepts the readiness check process using Kubernetes readiness gates:
 
-1. Detects new pods matching configured criteria
-2. Sends configured warmup requests to the application endpoint
-3. Waits for successful warmup completion
-4. Allows the pod to transition to READY state
+1. **Webhook Injection**: Mutating webhook injects `kube-booster.io/warmup-ready` readiness gate
+2. **Container Readiness**: Controller waits for containers to become ready
+3. **Warmup Execution**: Sends HTTP warmup requests to the configured endpoint
+4. **Condition Update**: Sets the warmup condition to True, allowing pod to become READY
 
-## Installation
+```
+Pod Created → Webhook Injects Gate → Containers Ready → Warmup Requests → Pod READY
+```
 
-_Coming soon_
+## 📦 Installation
 
-## Configuration
+### Quick Start
 
-_Coming soon_
+```bash
+# Clone the repository
+git clone https://github.com/hhiroshell/kube-booster.git
+cd kube-booster
 
-## Usage
+# Generate certificates for webhook
+make generate-certs
 
-_Coming soon_
+# Deploy to cluster
+make deploy
 
-## Requirements
+# Verify installation
+kubectl get deployment -n kube-system kube-booster-controller
+```
 
-- Kubernetes cluster (version TBD)
-- Appropriate RBAC permissions for the controller
+See [docs/USAGE.md](docs/USAGE.md) for detailed installation instructions.
 
-## Development
+## ⚙️ Configuration
+
+Enable warmup for your application by adding annotations to your pod template:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  template:
+    metadata:
+      annotations:
+        # Enable warmup (required)
+        kube-booster.io/warmup: "enabled"
+
+        # Optional configuration
+        kube-booster.io/warmup-endpoint: "/warmup"  # Default: /
+        kube-booster.io/warmup-requests: "5"        # Default: 3
+        kube-booster.io/warmup-duration: "30s"      # Default: 30s
+        kube-booster.io/warmup-port: "8080"         # Auto-detected if single port
+    spec:
+      containers:
+      - name: my-app
+        image: my-app:latest
+        ports:
+        - containerPort: 8080
+```
+
+## 📋 Requirements
+
+- Kubernetes cluster 1.19+
+- kubectl configured to access your cluster
+- Cluster admin permissions (for webhooks and RBAC)
+
+## 🛠️ Development
 
 ### Prerequisites
 
 - Go 1.25 or later
 - Docker (for building container images)
 - kubectl (for deploying to Kubernetes)
-- Access to a Kubernetes cluster
+- kind or minikube (for local testing)
 
 ### Building
 
-Build the controller binary:
 ```bash
+# Build the controller binary
 make build
-```
 
-### Running Locally
-
-Run the controller locally:
-```bash
-make run
+# Build Docker image
+make docker-build IMG=your-registry/kube-booster:tag
 ```
 
 ### Testing
 
-Run tests:
 ```bash
+# Run unit tests
 make test
-```
 
-Run linter:
-```bash
+# Run linter
 make lint
+
+# Run smoke tests (requires deployed controller)
+./hack/quick_test.sh
 ```
 
-### Building Docker Image
+### Local Development
 
-Build the Docker image:
 ```bash
-make docker-build IMG=your-registry/kube-booster:tag
+# Create kind cluster
+kind create cluster --name kube-booster-dev
+
+# Build and load image
+make docker-build
+kind load docker-image controller:latest --name kube-booster-dev
+
+# Deploy
+make generate-certs
+make deploy
+
+# Test with sample app
+make deploy-sample
 ```
 
-### Project Structure
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed development instructions.
 
-- `cmd/controller/` - Controller entry point
-- `pkg/controller/` - Controller implementation
-- `pkg/warmup/` - Warmup request logic
-- `config/crd/` - Custom Resource Definitions
-- `config/rbac/` - RBAC configurations
-- `config/samples/` - Example configurations
+### 📁 Project Structure
 
-## Contributing
+```
+kube-booster/
+├── cmd/controller/     # Controller entry point
+├── pkg/
+│   ├── controller/     # Pod reconciler implementation
+│   ├── warmup/         # Warmup execution (Vegeta)
+│   └── webhook/        # Mutating admission webhook
+├── config/
+│   ├── rbac/           # RBAC configurations
+│   ├── webhook/        # Webhook configurations
+│   └── samples/        # Example deployments
+├── hack/               # Scripts (certs, testing)
+└── docs/               # Documentation
+```
 
-_Coming soon_
+## 📚 Documentation
 
-## License
+- [Usage Guide](docs/USAGE.md) - Installation and configuration
+- [Development Guide](docs/DEVELOPMENT.md) - Building and contributing
+- [Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md) - Technical details
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read the [Development Guide](docs/DEVELOPMENT.md) for guidelines.
+
+## 📄 License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.

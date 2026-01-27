@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Quick test script for kube-booster Phase 1 & 2
+# Quick test script for kube-booster
 # This script performs basic smoke tests to verify the implementation
 
 set -e
@@ -10,7 +10,7 @@ TEST_POD="test-warmup-pod"
 CONTROLLER_NAMESPACE="kube-system"
 
 echo "=========================================="
-echo "kube-booster Phase 1 & 2 Quick Test"
+echo "kube-booster Quick Test"
 echo "=========================================="
 echo ""
 
@@ -149,7 +149,7 @@ echo "=========================================="
 echo "✓ All tests passed!"
 echo "=========================================="
 echo ""
-echo "Phase 1 & 2 implementation is working correctly."
+echo "kube-booster implementation is working correctly."
 echo ""
 echo "Warmup features verified:"
 echo "  - Readiness gate injection via mutating webhook"
