@@ -1,6 +1,7 @@
 package warmup
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -313,7 +314,7 @@ func TestParseConfig(t *testing.T) {
 					t.Errorf("ParseConfig() expected error containing %q, got nil", tt.errContains)
 					return
 				}
-				if tt.errContains != "" && !containsString(err.Error(), tt.errContains) {
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
 					t.Errorf("ParseConfig() error = %v, want error containing %q", err, tt.errContains)
 				}
 				return
@@ -391,18 +392,4 @@ func TestConfig_BuildEndpointURL(t *testing.T) {
 			}
 		})
 	}
-}
-
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
