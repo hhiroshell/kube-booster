@@ -22,6 +22,7 @@ type PodReconciler struct {
 	client.Client
 	Scheme         *runtime.Scheme
 	WarmupExecutor warmup.Executor
+	NodeName       string // Node name for node-local mode (empty = cluster-wide)
 }
 
 // Reconcile handles pod reconciliation

@@ -9,4 +9,5 @@ resources:
 - rbac/role_binding.yaml
 - webhook/service.yaml
 - webhook/mutating_webhook.yaml
-- deployment.yaml
+- webhook/deployment.yaml
+- controller/daemonset.yaml
