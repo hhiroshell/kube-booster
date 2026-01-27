@@ -6,9 +6,9 @@ This guide shows you how to deploy and use kube-booster in your Kubernetes clust
 
 kube-booster is a Kubernetes controller that ensures smooth application launches by managing warmup readiness gates. It prevents pods from receiving traffic until they are fully warmed up.
 
-**Current Status**: Phase 1 and Phase 2 are implemented:
-- **Phase 1**: Mutating webhook injects readiness gates for annotated pods
-- **Phase 2**: Controller sends HTTP warmup requests using Vegeta before marking pods ready
+**Current Features**:
+- Mutating webhook injects readiness gates for annotated pods
+- Controller sends HTTP warmup requests using Vegeta before marking pods ready
 - Fail-open behavior ensures pods become ready even if warmup fails
 
 ## Prerequisites
@@ -94,13 +94,13 @@ spec:
 
 ### Configuration Annotations
 
-| Annotation | Description | Default | Status |
-|------------|-------------|---------|--------|
-| `kube-booster.io/warmup` | Enable/disable warmup (`enabled`/`disabled`) | `disabled` | ✅ Phase 1 |
-| `kube-booster.io/warmup-endpoint` | HTTP endpoint path for warmup requests | `/` | ✅ Phase 2 |
-| `kube-booster.io/warmup-requests` | Number of warmup requests to send | `3` | ✅ Phase 2 |
-| `kube-booster.io/warmup-duration` | Total duration for warmup (e.g., `30s`, `1m`) | `30s` | ✅ Phase 2 |
-| `kube-booster.io/warmup-port` | Container port for warmup requests | Auto-detected | ✅ Phase 2 |
+| Annotation | Description | Default |
+|------------|-------------|---------|
+| `kube-booster.io/warmup` | Enable/disable warmup (`enabled`/`disabled`) | `disabled` |
+| `kube-booster.io/warmup-endpoint` | HTTP endpoint path for warmup requests | `/` |
+| `kube-booster.io/warmup-requests` | Number of warmup requests to send | `3` |
+| `kube-booster.io/warmup-duration` | Total duration for warmup (e.g., `30s`, `1m`) | `30s` |
+| `kube-booster.io/warmup-port` | Container port for warmup requests | Auto-detected |
 
 ### Example: Complete Application
 
@@ -449,7 +449,7 @@ After warmup completes, the controller logs:
 
 - Review [DEVELOPMENT.md](DEVELOPMENT.md) for building from source and contributing
 - Check [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for technical details
-- See Phase 2 roadmap in [CLAUDE.md](../CLAUDE.md) for upcoming features
+- See [CLAUDE.md](../CLAUDE.md) for architecture and future roadmap
 
 ## Support
 
