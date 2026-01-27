@@ -121,7 +121,7 @@ github.com/tsenart/vegeta/v12 v12.12.0
 
 Testing:
 ```
-sigs.k8s.io/controller-runtime/pkg/envtest
+sigs.k8s.io/controller-runtime/pkg/client/fake
 ```
 
 ### Phase 2: HTTP Warmup Execution
@@ -313,7 +313,7 @@ Future enhancements (Phase 3+):
 6. Test without annotation (no injection)
 
 ### Integration Testing
-1. Use envtest for integration tests
+1. Consider adding integration tests with a real cluster (e.g., kind)
 2. Test full webhook + controller flow
 3. Test concurrent pod creation
 4. Test edge cases (pod deletion during warmup)
@@ -336,12 +336,14 @@ Future enhancements (Phase 3+):
 
 ## Conclusion
 
-Phase 1 and Phase 2 implementation is complete and ready for production use. The system provides:
+Phase 1 and Phase 2 implementation is complete and ready for testing. The system provides:
 
 ✓ End-to-end warmup functionality via annotations
 ✓ HTTP warmup requests using Vegeta load testing library
 ✓ Fail-open behavior ensuring pod availability
-✓ High test coverage (84.2% webhook, 92.9% warmup, 68.4% controller)
+✓ Good test coverage (84.2% webhook, 92.9% warmup, 68.4% controller)
 ✓ Comprehensive documentation
 ✓ Straightforward deployment
 ✓ Kubernetes best practices (readiness gates, controller-runtime)
+
+Further testing and validation in real-world environments is recommended before production use.
