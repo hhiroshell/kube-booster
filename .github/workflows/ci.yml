@@ -79,5 +79,5 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v2
-          install-mode: goinstall
+          version: v2.8.0
+          verify: false
