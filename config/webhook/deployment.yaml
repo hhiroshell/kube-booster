@@ -1,32 +1,38 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kube-booster-controller
+  name: kube-booster-webhook
   namespace: kube-system
   labels:
-    app: kube-booster-controller
+    app: kube-booster-webhook
+    app.kubernetes.io/name: kube-booster
+    app.kubernetes.io/component: webhook
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: kube-booster-controller
+      app: kube-booster-webhook
   template:
     metadata:
       labels:
-        app: kube-booster-controller
+        app: kube-booster-webhook
+        app.kubernetes.io/name: kube-booster
+        app.kubernetes.io/component: webhook
     spec:
       serviceAccountName: kube-booster-controller
       containers:
-      - name: controller
+      - name: webhook
         image: controller:latest
         imagePullPolicy: IfNotPresent
         command:
         - /controller
         args:
-        - --metrics-bind-address=:8080
-        - --health-probe-bind-address=:8081
+        - --enable-webhook=true
+        - --enable-controller=false
         - --webhook-port=9443
         - --cert-dir=/tmp/k8s-webhook-server/serving-certs
+        - --metrics-bind-address=:8080
+        - --health-probe-bind-address=:8081
         ports:
         - containerPort: 9443
           name: webhook

@@ -43,8 +43,8 @@ make generate-certs
 # Deploy to cluster
 make deploy
 
-# Verify installation
-kubectl get deployment -n kube-system kube-booster-controller
+# Verify all kube-booster components are running
+kubectl get pods -n kube-system -l app.kubernetes.io/name=kube-booster
 ```
 
 See [docs/USAGE.md](docs/USAGE.md) for detailed installation instructions.

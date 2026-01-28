@@ -68,12 +68,16 @@ Successfully implemented kube-booster: a Kubernetes mutating webhook and control
   - FailurePolicy: Ignore (fail-open)
 
 #### Deployment (`config/`)
-- `deployment.yaml` - Controller deployment
-  - Single replica
+- `webhook/deployment.yaml` - Webhook deployment
+  - Single replica (scalable)
+  - Handles pod admission via mutating webhook
+  - Mounts TLS certificates
   - Security contexts (non-root, read-only filesystem)
-  - Health and readiness probes
-  - Resource limits
-  - Volume mount for TLS certificates
+- `controller/daemonset.yaml` - Controller DaemonSet
+  - One pod per node (node-local operation)
+  - Handles warmup execution
+  - Uses field selector to watch only pods on its node
+  - No TLS certificates needed
 - `kustomization.yaml` - Kustomize configuration
 
 #### Sample Application (`config/samples/`)
@@ -302,8 +306,7 @@ Future enhancements:
 7. **Health Check Integration**: Optionally use readiness probe path as default endpoint
 8. **Distributed Tracing**: Add trace context to warmup requests
 9. **Webhook Config Validation**: Validate warmup annotation values at admission time
-10. **Architecture Separation**: Split webhook and controller into separate DaemonSet deployments for better scalability
-11. **Parallel Warmup Execution**: Increase controller-runtime reconcile concurrency for parallel warmup processing
+10. **Parallel Warmup Execution**: Increase controller-runtime reconcile concurrency for parallel warmup processing
 
 ## Testing Recommendations
 

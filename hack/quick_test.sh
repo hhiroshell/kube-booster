@@ -14,18 +14,36 @@ echo "kube-booster Quick Test"
 echo "=========================================="
 echo ""
 
-# Check if controller is running
-echo "1. Checking if controller is running..."
-if kubectl get deployment kube-booster-controller -n ${CONTROLLER_NAMESPACE} &> /dev/null; then
-    READY=$(kubectl get deployment kube-booster-controller -n ${CONTROLLER_NAMESPACE} -o jsonpath='{.status.readyReplicas}')
-    if [ "$READY" == "1" ]; then
-        echo "   ✓ Controller is running"
+# Check if webhook and controller are running
+echo "1. Checking if kube-booster components are running..."
+
+# Check webhook deployment
+if kubectl get deployment kube-booster-webhook -n ${CONTROLLER_NAMESPACE} &> /dev/null; then
+    WEBHOOK_READY=$(kubectl get deployment kube-booster-webhook -n ${CONTROLLER_NAMESPACE} -o jsonpath='{.status.readyReplicas}')
+    if [ "$WEBHOOK_READY" == "1" ]; then
+        echo "   ✓ Webhook deployment is running"
     else
-        echo "   ✗ Controller is not ready"
+        echo "   ✗ Webhook deployment is not ready"
         exit 1
     fi
 else
-    echo "   ✗ Controller deployment not found"
+    echo "   ✗ Webhook deployment not found"
+    echo "   Run 'make deploy' first"
+    exit 1
+fi
+
+# Check controller daemonset
+if kubectl get daemonset kube-booster-controller -n ${CONTROLLER_NAMESPACE} &> /dev/null; then
+    DESIRED=$(kubectl get daemonset kube-booster-controller -n ${CONTROLLER_NAMESPACE} -o jsonpath='{.status.desiredNumberScheduled}')
+    READY=$(kubectl get daemonset kube-booster-controller -n ${CONTROLLER_NAMESPACE} -o jsonpath='{.status.numberReady}')
+    if [ "$READY" == "$DESIRED" ] && [ "$READY" != "0" ]; then
+        echo "   ✓ Controller daemonset is running ($READY/$DESIRED pods)"
+    else
+        echo "   ✗ Controller daemonset is not ready ($READY/$DESIRED pods)"
+        exit 1
+    fi
+else
+    echo "   ✗ Controller daemonset not found"
     echo "   Run 'make deploy' first"
     exit 1
 fi
@@ -112,9 +130,13 @@ fi
 # Verify warmup execution in controller logs
 echo ""
 echo "7. Verifying warmup execution in controller logs..."
-WARMUP_LOGS=$(kubectl logs -n ${CONTROLLER_NAMESPACE} -l app=kube-booster-controller --tail=50 2>/dev/null | grep -E "(starting warmup execution|warmup completed)" | tail -5 || true)
+# Find which node the test pod is running on, then get logs from that node's controller
+TEST_POD_NODE=$(kubectl get pod ${TEST_POD} -o jsonpath='{.spec.nodeName}')
+CONTROLLER_POD=$(kubectl get pods -n ${CONTROLLER_NAMESPACE} -l app.kubernetes.io/component=controller --field-selector spec.nodeName=${TEST_POD_NODE} -o jsonpath='{.items[0].metadata.name}')
+WARMUP_LOGS=$(kubectl logs -n ${CONTROLLER_NAMESPACE} ${CONTROLLER_POD} --tail=50 2>/dev/null | grep -E "(starting warmup execution|warmup completed)" | tail -5 || true)
+
 if [ -n "$WARMUP_LOGS" ]; then
-    echo "   ✓ Warmup execution found in controller logs:"
+    echo "   ✓ Warmup execution found in controller logs (node: ${TEST_POD_NODE}):"
     echo "$WARMUP_LOGS" | while read line; do
         echo "     $line"
     done
@@ -159,6 +181,7 @@ echo "  - Pod condition update after warmup"
 echo ""
 echo "Next steps:"
 echo "  - Deploy sample application: make deploy-sample"
-echo "  - View controller logs: kubectl logs -n kube-system -l app=kube-booster-controller -f"
+echo "  - View all pods: kubectl get pods -n kube-system -l app.kubernetes.io/name=kube-booster"
+echo "  - View all logs: kubectl logs -n kube-system -l app.kubernetes.io/name=kube-booster --prefix"
 echo "  - See docs/USAGE.md for more details"
 echo ""
