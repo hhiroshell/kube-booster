@@ -17,7 +17,7 @@ import (
 
 func TestPodReconciler_Reconcile(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme) //nolint:errcheck // scheme registration never fails
 
 	tests := []struct {
 		name             string
@@ -343,7 +343,7 @@ func TestPodReconciler_isConditionTrue(t *testing.T) {
 
 func TestPodReconciler_WarmupIntegration(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme) //nolint:errcheck // scheme registration never fails
 
 	tests := []struct {
 		name          string
