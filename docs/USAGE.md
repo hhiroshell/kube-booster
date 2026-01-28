@@ -39,6 +39,32 @@ make deploy
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for instructions on building from source.
 
+### Deployment Architecture
+
+kube-booster deploys as two separate workloads:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     kube-system namespace                           │
+│                                                                     │
+│  ┌──────────────────────────┐    ┌──────────────────────────────┐  │
+│  │   Webhook (Deployment)   │    │   Controller (DaemonSet)     │  │
+│  │   • 1 replica            │    │   • 1 pod per node           │  │
+│  │   • Handles admission    │    │   • Executes warmup locally  │  │
+│  │   • Injects readiness    │    │   • Watches node-local pods  │  │
+│  │     gates                │    │                              │  │
+│  └──────────────────────────┘    └──────────────────────────────┘  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+This architecture ensures:
+- **Scalability**: Controller pods scale with cluster nodes
+- **Efficiency**: Warmup requests are sent from the same node as the target pod
+- **Resilience**: Node-local failures don't affect other nodes
+
+See [DEVELOPMENT.md](DEVELOPMENT.md#deployment-architectures) for detailed architecture diagrams and alternative deployment modes.
+
 ### Verify Installation
 
 Check that the webhook and controller are running:

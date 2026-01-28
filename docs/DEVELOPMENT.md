@@ -261,6 +261,110 @@ kube-booster/
 
 ## Architecture Overview
 
+### Deployment Architectures
+
+kube-booster supports two deployment architectures: **Separate** (recommended for production multi-node clusters) and **Combined** (simpler, suitable for development or single-node clusters).
+
+#### Separate Deployment (Deployment + DaemonSet)
+
+In this architecture, the webhook and controller run as separate workloads:
+- **Webhook**: Runs as a Deployment (cluster-wide, stateless, handles pod admission)
+- **Controller**: Runs as a DaemonSet (node-local, one pod per node, handles warmup execution)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            Kubernetes Cluster                               │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                       kube-system namespace                           │  │
+│  │                                                                       │  │
+│  │   Webhook Deployment (1 replica)                                      │  │
+│  │  ┌─────────────────────────────────────────────────────────────────┐  │  │
+│  │  │  kube-booster-webhook                                           │  │  │
+│  │  │  • Handles pod CREATE admission (cluster-wide)                  │  │  │
+│  │  │  • Injects readiness gates                                      │  │  │
+│  │  │  • Flags: --enable-webhook=true --enable-controller=false       │  │  │
+│  │  └─────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                       │  │
+│  │   Controller DaemonSet (1 pod per node)                               │  │
+│  │  ┌─────────────────────────────────────────────────────────────────┐  │  │
+│  │  │                                                                 │  │  │
+│  │  │   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐          │  │  │
+│  │  │   │   Node A    │   │   Node B    │   │   Node C    │   ...    │  │  │
+│  │  │   │  ┌───────┐  │   │  ┌───────┐  │   │  ┌───────┐  │          │  │  │
+│  │  │   │  │ ctrl  │  │   │  │ ctrl  │  │   │  │ ctrl  │  │          │  │  │
+│  │  │   │  │ pod   │  │   │  │ pod   │  │   │  │ pod   │  │          │  │  │
+│  │  │   │  └───────┘  │   │  └───────┘  │   │  └───────┘  │          │  │  │
+│  │  │   └─────────────┘   └─────────────┘   └─────────────┘          │  │  │
+│  │  │                                                                 │  │  │
+│  │  │  • Each pod watches only pods on its node (--node-name flag)    │  │  │
+│  │  │  • Executes warmup requests locally                             │  │  │
+│  │  │  • Flags: --enable-webhook=false --enable-controller=true       │  │  │
+│  │  └─────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Benefits:**
+- Scalable: Controller scales automatically with cluster nodes
+- Efficient: Warmup requests are sent from the same node as the target pod
+- Resilient: Controller failure on one node doesn't affect other nodes
+
+**Use when:** Production multi-node clusters
+
+#### Combined Deployment (Single Deployment)
+
+In this architecture, both webhook and controller run in a single deployment:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            Kubernetes Cluster                               │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                       kube-system namespace                           │  │
+│  │                                                                       │  │
+│  │   Combined Deployment (1+ replicas)                                   │  │
+│  │  ┌─────────────────────────────────────────────────────────────────┐  │  │
+│  │  │  kube-booster                                                   │  │  │
+│  │  │  ┌─────────────────────────────────────────────────────────┐    │  │  │
+│  │  │  │                    Single Pod                           │    │  │  │
+│  │  │  │                                                         │    │  │  │
+│  │  │  │   ┌─────────────────┐    ┌─────────────────────────┐   │    │  │  │
+│  │  │  │   │     Webhook     │    │       Controller        │   │    │  │  │
+│  │  │  │   │   (port 9443)   │    │    (cluster-wide)       │   │    │  │  │
+│  │  │  │   │                 │    │                         │   │    │  │  │
+│  │  │  │   │  Handles pod    │    │  Watches all pods with  │   │    │  │  │
+│  │  │  │   │  admission      │    │  readiness gate and     │   │    │  │  │
+│  │  │  │   │                 │    │  executes warmup        │   │    │  │  │
+│  │  │  │   └─────────────────┘    └─────────────────────────┘   │    │  │  │
+│  │  │  │                                                         │    │  │  │
+│  │  │  │   Flags: --enable-webhook=true --enable-controller=true │    │  │  │
+│  │  │  │          (both default to true)                         │    │  │  │
+│  │  │  └─────────────────────────────────────────────────────────┘    │  │  │
+│  │  │                                                                 │  │  │
+│  │  └─────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Benefits:**
+- Simple: Single deployment to manage
+- Easy setup: Fewer manifests and configuration
+
+**Use when:** Development, testing, or single-node clusters
+
+#### Command-Line Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--enable-webhook` | `true` | Enable the mutating webhook server |
+| `--enable-controller` | `true` | Enable the pod controller |
+| `--node-name` | `""` | Node name for node-local mode (enables node filtering) |
+
 ### Components
 
 #### Webhook (pkg/webhook/)
