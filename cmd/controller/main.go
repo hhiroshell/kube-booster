@@ -127,7 +127,6 @@ func main() {
 			Client:         mgr.GetClient(),
 			Scheme:         mgr.GetScheme(),
 			WarmupExecutor: warmupExecutor,
-			NodeName:       nodeName,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "Pod")
 			os.Exit(1)
