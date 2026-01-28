@@ -13,7 +13,7 @@ import (
 
 func TestPodMutator_Handle(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme) //nolint:errcheck // scheme registration never fails
 
 	tests := []struct {
 		name        string
@@ -148,7 +148,7 @@ func TestPodMutator_Handle(t *testing.T) {
 
 func TestPodMutator_InjectDecoder(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme) //nolint:errcheck // scheme registration never fails
 
 	mutator := &PodMutator{}
 	decoder := admission.NewDecoder(scheme)
