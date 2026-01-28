@@ -44,17 +44,19 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for instructions on building from source.
 Check that the webhook and controller are running:
 
 ```bash
-# Check webhook deployment
-kubectl get deployment -n kube-system kube-booster-webhook
+# List all kube-booster components at once
+kubectl get pods -n kube-system -l app.kubernetes.io/name=kube-booster
 
-# Check controller DaemonSet
+# Or check each component separately
+kubectl get deployment -n kube-system kube-booster-webhook
 kubectl get daemonset -n kube-system kube-booster-controller
 
-# View webhook logs
-kubectl logs -n kube-system -l app=kube-booster-webhook -f
+# View logs from all kube-booster components
+kubectl logs -n kube-system -l app.kubernetes.io/name=kube-booster --prefix
 
-# View controller logs
-kubectl logs -n kube-system daemonset/kube-booster-controller -f
+# Or view logs from specific components
+kubectl logs -n kube-system -l app.kubernetes.io/component=webhook -f
+kubectl logs -n kube-system -l app.kubernetes.io/component=controller -f
 ```
 
 Expected output:
@@ -302,12 +304,12 @@ This script verifies:
 Check webhook is running:
 ```bash
 kubectl get deployment -n kube-system kube-booster-webhook
-kubectl get pods -n kube-system -l app=kube-booster-webhook
+kubectl get pods -n kube-system -l app.kubernetes.io/component=webhook
 ```
 
 Check webhook logs:
 ```bash
-kubectl logs -n kube-system -l app=kube-booster-webhook
+kubectl logs -n kube-system -l app.kubernetes.io/component=webhook
 ```
 
 Verify webhook configuration:
@@ -373,11 +375,14 @@ kubectl get secret kube-booster-webhook-cert -n kube-system -o jsonpath='{.data.
 
 View detailed logs:
 ```bash
+# View logs from all kube-booster components (with pod name prefix)
+kubectl logs -n kube-system -l app.kubernetes.io/name=kube-booster --prefix
+
 # Follow webhook logs in real-time
-kubectl logs -n kube-system -l app=kube-booster-webhook -f
+kubectl logs -n kube-system -l app.kubernetes.io/component=webhook -f
 
 # Follow controller logs in real-time
-kubectl logs -n kube-system daemonset/kube-booster-controller -f
+kubectl logs -n kube-system -l app.kubernetes.io/component=controller -f
 
 # Get recent controller logs
 kubectl logs -n kube-system daemonset/kube-booster-controller --tail=100
