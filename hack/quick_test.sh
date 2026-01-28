@@ -130,9 +130,13 @@ fi
 # Verify warmup execution in controller logs
 echo ""
 echo "7. Verifying warmup execution in controller logs..."
-WARMUP_LOGS=$(kubectl logs -n ${CONTROLLER_NAMESPACE} daemonset/kube-booster-controller --tail=50 2>/dev/null | grep -E "(starting warmup execution|warmup completed)" | tail -5 || true)
+# Find which node the test pod is running on, then get logs from that node's controller
+TEST_POD_NODE=$(kubectl get pod ${TEST_POD} -o jsonpath='{.spec.nodeName}')
+CONTROLLER_POD=$(kubectl get pods -n ${CONTROLLER_NAMESPACE} -l app.kubernetes.io/component=controller --field-selector spec.nodeName=${TEST_POD_NODE} -o jsonpath='{.items[0].metadata.name}')
+WARMUP_LOGS=$(kubectl logs -n ${CONTROLLER_NAMESPACE} ${CONTROLLER_POD} --tail=50 2>/dev/null | grep -E "(starting warmup execution|warmup completed)" | tail -5 || true)
+
 if [ -n "$WARMUP_LOGS" ]; then
-    echo "   ✓ Warmup execution found in controller logs:"
+    echo "   ✓ Warmup execution found in controller logs (node: ${TEST_POD_NODE}):"
     echo "$WARMUP_LOGS" | while read line; do
         echo "     $line"
     done
