@@ -5,6 +5,8 @@ metadata:
   namespace: kube-system
   labels:
     app: kube-booster-controller
+    app.kubernetes.io/name: kube-booster
+    app.kubernetes.io/component: controller
 spec:
   selector:
     matchLabels:
@@ -13,6 +15,8 @@ spec:
     metadata:
       labels:
         app: kube-booster-controller
+        app.kubernetes.io/name: kube-booster
+        app.kubernetes.io/component: controller
     spec:
       serviceAccountName: kube-booster-controller
       containers:
