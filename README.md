@@ -1,5 +1,7 @@
 # 🚀 Kube Booster
 
+[![CI](https://github.com/hhiroshell/kube-booster/actions/workflows/ci.yml/badge.svg)](https://github.com/hhiroshell/kube-booster/actions/workflows/ci.yml)
+
 A Kubernetes custom controller that ensures smooth application launches by sending warmup requests to application endpoints before pods transition to READY state.
 
 ## 📖 Overview
