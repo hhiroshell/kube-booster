@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -17,11 +18,19 @@ import (
 	"github.com/hhiroshell/kube-booster/pkg/webhook"
 )
 
+// Event reason constants
+const (
+	ReasonWarmupStarted   = "WarmupStarted"
+	ReasonWarmupCompleted = "WarmupCompleted"
+	ReasonWarmupFailed    = "WarmupFailed"
+)
+
 // PodReconciler reconciles pods with warmup readiness gates
 type PodReconciler struct {
 	client.Client
 	Scheme         *runtime.Scheme
 	WarmupExecutor warmup.Executor
+	Recorder       events.EventRecorder
 }
 
 // Reconcile handles pod reconciliation
@@ -79,6 +88,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	// All conditions met, execute warmup
 	logger.Info("starting warmup execution", "pod", pod.Name, "namespace", pod.Namespace)
+	r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupStarted, "StartWarmup", "Starting warmup execution")
 
 	// Parse warmup configuration from pod annotations
 	config, err := warmup.ParseConfig(pod)
@@ -86,6 +96,8 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		// Config parsing failed (likely port determination issue)
 		// Log error and mark as failed-open
 		logger.Error(err, "failed to parse warmup config")
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeWarning, ReasonWarmupFailed, "FailWarmup",
+			"Warmup config error: %v", err)
 		result := &warmup.Result{
 			Success: false,
 			Message: fmt.Sprintf("warmup config error: %v", err),
@@ -130,8 +142,11 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	if result.Success {
 		logger.Info("warmup completed successfully", "message", result.Message)
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupCompleted, "CompleteWarmup", "%s", result.Message)
 	} else {
 		logger.Info("warmup completed with issues (fail-open)", "message", result.Message, "error", result.Error)
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeWarning, ReasonWarmupFailed, "FailWarmup",
+			"Warmup failed (fail-open): %s", result.Message)
 	}
 
 	return ctrl.Result{}, nil
