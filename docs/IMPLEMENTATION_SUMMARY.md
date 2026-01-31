@@ -35,6 +35,7 @@ Successfully implemented kube-booster: a Kubernetes mutating webhook and control
 - Watches pods with the injected readiness gate
 - Checks if pod is Running
 - Verifies all containers are ready
+- Emits Kubernetes Events for warmup lifecycle visibility
 - Sets `kube-booster.io/warmup-ready` condition to True
 - Requeues with 5s delay if conditions not met
 
@@ -177,10 +178,36 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 - **Fail-open behavior**: Pods marked ready even if warmup fails
 - Warning logs emitted on warmup failure
 
+### Kubernetes Events
+
+**Event Recording:**
+- Uses the new Kubernetes events API (`k8s.io/client-go/tools/events`)
+- Events visible via `kubectl describe pod`
+- Provides warmup lifecycle visibility for operators
+
+**Event Types:**
+| Event Reason | Type | When Emitted |
+|--------------|------|--------------|
+| `WarmupStarted` | Normal | Warmup execution begins |
+| `WarmupCompleted` | Normal | Warmup completed successfully |
+| `WarmupFailed` | Warning | Config error or warmup request failures |
+| `ConditionUpdated` | Normal | Pod condition set to True (successful warmup) |
+| `ConditionUpdated` | Warning | Pod condition set to True (fail-open scenario) |
+
+**Example Output:**
+```
+Events:
+  Type     Reason             Age   From                       Message
+  ----     ------             ----  ----                       -------
+  Normal   WarmupStarted      10s   kube-booster-controller    Starting warmup execution
+  Normal   WarmupCompleted    5s    kube-booster-controller    warmup completed: 5/5 requests succeeded
+  Normal   ConditionUpdated   5s    kube-booster-controller    Pod condition kube-booster.io/warmup-ready set to True
+```
+
 ## Test Coverage
 
 - **pkg/webhook**: 84.2% coverage
-- **pkg/controller**: 68.4% coverage
+- **pkg/controller**: 71.0% coverage
 - **pkg/warmup**: 92.9% coverage
 
 All tests pass successfully.
@@ -202,11 +229,13 @@ User deploys pod with annotation
               └─> Pod created with readiness gate
                   └─> Controller watches pod (via predicates)
                       └─> Waits for pod Running + containers ready
-                          └─> Parses warmup config from annotations
-                              └─> Executes warmup requests via Vegeta
-                                  └─> Logs warmup results (latencies, success rate)
-                                      └─> Sets condition kube-booster.io/warmup-ready=True
-                                          └─> Pod transitions to READY
+                          └─> Emits WarmupStarted event
+                              └─> Parses warmup config from annotations
+                                  └─> Executes warmup requests via Vegeta
+                                      └─> Emits WarmupCompleted/WarmupFailed event
+                                          └─> Sets condition kube-booster.io/warmup-ready=True
+                                              └─> Emits ConditionUpdated event
+                                                  └─> Pod transitions to READY
 ```
 
 **Fail-open behavior:** If warmup fails (connection errors, non-200 responses), the controller:
@@ -265,11 +294,22 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ✅ Port auto-detection for single-container/single-port pods
 ✅ Unit tests pass with 92.9% coverage for warmup package
 
+## Success Criteria - Kubernetes Events
+
+✅ `WarmupStarted` event emitted when warmup begins
+✅ `WarmupCompleted` event emitted on successful warmup with latency summary
+✅ `WarmupFailed` event emitted on failure with error details
+✅ `ConditionUpdated` event emitted when pod condition is set to True
+✅ Events visible via `kubectl describe pod <pod-name>`
+✅ Uses new Kubernetes events API (`k8s.io/client-go/tools/events`)
+✅ RBAC configured for `events.k8s.io` API group
+✅ Unit tests for event recording
+
 ## What's NOT Implemented (Future Scope)
 
 - gRPC warmup support
 - Prometheus metrics export
-- Kubernetes events for warmup results
+- ~~Kubernetes events for warmup results~~ ✅ Implemented
 - CRD support for complex warmup scenarios (`WarmupConfig`)
 - Multiple sequential warmup endpoints
 - Custom warmup request bodies
@@ -299,7 +339,7 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 Future enhancements:
 1. **gRPC Support**: Add gRPC warmup request capability
 2. **Prometheus Metrics**: Export warmup metrics for monitoring dashboards
-3. **Kubernetes Events**: Record warmup results as pod events
+3. ~~**Kubernetes Events**: Record warmup results as pod events~~ ✅ Implemented
 4. **WarmupConfig CRD**: Support complex warmup scenarios with multiple endpoints
 5. **Retry Logic**: Add configurable retry with exponential backoff
 6. **Custom Request Bodies**: Support POST requests with custom payloads
@@ -339,6 +379,7 @@ Future enhancements:
 - No Prometheus metrics export
 - No CRD for advanced warmup configurations
 - Single attempt per warmup (no retry logic)
+- No distributed tracing integration
 
 ## Conclusion
 
@@ -347,9 +388,10 @@ The implementation is complete and ready for testing. The system provides:
 ✓ End-to-end warmup functionality via annotations
 ✓ HTTP warmup requests using Vegeta load testing library
 ✓ Fail-open behavior ensuring pod availability
-✓ Good test coverage (84.2% webhook, 92.9% warmup, 68.4% controller)
+✓ Kubernetes Events for warmup lifecycle visibility
+✓ Good test coverage (84.2% webhook, 92.9% warmup, 71.0% controller)
 ✓ Comprehensive documentation
 ✓ Straightforward deployment
-✓ Kubernetes best practices (readiness gates, controller-runtime)
+✓ Kubernetes best practices (readiness gates, controller-runtime, new events API)
 
 Further testing and validation in real-world environments is recommended before production use.

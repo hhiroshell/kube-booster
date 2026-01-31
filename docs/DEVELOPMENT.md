@@ -165,7 +165,7 @@ go tool cover -html=coverage.out
 
 Current coverage:
 - `pkg/webhook`: 84.2%
-- `pkg/controller`: 68.4%
+- `pkg/controller`: 71.0%
 - `pkg/warmup`: 92.9%
 
 ### Running Tests
@@ -388,6 +388,7 @@ In this architecture, both webhook and controller run in a single deployment:
 - Checks if containers are ready
 - Executes warmup requests before marking ready
 - Updates pod condition when warmup completes
+- Emits Kubernetes Events for warmup lifecycle visibility
 
 **Key methods:**
 - `Reconcile(ctx, req)` - Main reconciliation loop
@@ -395,6 +396,12 @@ In this architecture, both webhook and controller run in a single deployment:
 - `isConditionTrue(pod, type)` - Checks condition status
 - `areContainersReady(pod)` - Checks container readiness
 - `setConditionTrue(ctx, pod)` - Updates pod condition
+
+**Event Constants:**
+- `ReasonWarmupStarted` - Emitted when warmup begins
+- `ReasonWarmupCompleted` - Emitted on successful warmup
+- `ReasonWarmupFailed` - Emitted on warmup failure
+- `ReasonConditionUpdated` - Emitted when pod condition is updated
 
 **predicates.go**
 - `HasReadinessGatePredicate()` - Filters events for relevant pods
@@ -788,7 +795,7 @@ HTTP warmup execution is complete. See [CLAUDE.md](../CLAUDE.md) for the complet
 
 2. **Observability Enhancements**
    - Prometheus metrics export
-   - Kubernetes events for warmup results
+   - ~~Kubernetes events for warmup results~~ ✅ Implemented
    - Distributed tracing integration
 
 3. **Advanced Features**
