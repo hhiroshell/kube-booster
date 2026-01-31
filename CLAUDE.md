@@ -71,7 +71,11 @@ spec:
 - Default requests: 3
 - Default endpoint: `/`
 - Default port: Auto-detected from container spec (single container with single port)
-- Fail-open behavior: If warmup fails, still mark pod as ready (with warning log)
+- Fail-open behavior: If warmup fails, still mark pod as ready (with warning event)
+
+**Observability:**
+- Kubernetes Events emitted for warmup lifecycle (visible via `kubectl describe pod`)
+- Events: `WarmupStarted`, `WarmupCompleted`, `WarmupFailed`, `ConditionUpdated`
 
 **Opt-out:**
 Pods without the `kube-booster.io/warmup: "enabled"` annotation are not affected by the controller.
@@ -124,10 +128,13 @@ The controller follows the standard Kubernetes controller pattern with readiness
 1. **Mutating webhook** inspects pod creation events
 2. If pod has `kube-booster.io/warmup: "enabled"`, inject readiness gate: `kube-booster.io/warmup-ready`
 3. **Controller** watches pods with the injected readiness gate
-4. Controller waits for containers to be ready, then parses warmup config from annotations
-5. Controller sends HTTP warmup requests using Vegeta load testing library
-6. Controller updates pod condition `kube-booster.io/warmup-ready` to `True` when warmup completes (or on failure, fail-open)
-7. Kubernetes marks pod as READY only after all readiness gates are satisfied
+4. Controller waits for containers to be ready, then emits `WarmupStarted` event
+5. Controller parses warmup config from annotations
+6. Controller sends HTTP warmup requests using Vegeta load testing library
+7. Controller emits `WarmupCompleted` or `WarmupFailed` event with result details
+8. Controller updates pod condition `kube-booster.io/warmup-ready` to `True` when warmup completes (or on failure, fail-open)
+9. Controller emits `ConditionUpdated` event
+10. Kubernetes marks pod as READY only after all readiness gates are satisfied
 
 ## Development Commands
 

@@ -2,12 +2,14 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -177,10 +179,13 @@ func TestPodReconciler_Reconcile(t *testing.T) {
 				},
 			}
 
+			fakeRecorder := events.NewFakeRecorder(100)
+
 			reconciler := &PodReconciler{
 				Client:         client,
 				Scheme:         scheme,
 				WarmupExecutor: mockExecutor,
+				Recorder:       fakeRecorder,
 			}
 
 			req := ctrl.Request{
@@ -559,10 +564,13 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 				WithStatusSubresource(tt.pod).
 				Build()
 
+			fakeRecorder := events.NewFakeRecorder(100)
+
 			reconciler := &PodReconciler{
 				Client:         client,
 				Scheme:         scheme,
 				WarmupExecutor: tt.executor,
+				Recorder:       fakeRecorder,
 			}
 
 			req := ctrl.Request{
@@ -606,4 +614,195 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 
 func hasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+func TestPodReconciler_EventRecording(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme) //nolint:errcheck // scheme registration never fails
+
+	tests := []struct {
+		name           string
+		pod            *corev1.Pod
+		executor       warmup.Executor
+		wantEvents     []string // Expected event reasons
+		wantEventTypes []string // Expected event types (Normal/Warning)
+	}{
+		{
+			name: "warmup success emits started, completed, and condition updated events",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupEnabled: "enabled",
+						webhook.AnnotationWarmupPort:    "8080",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app", Image: "nginx"},
+					},
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: corev1.PodConditionType(webhook.ReadinessGateName)},
+					},
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					PodIP: "10.0.0.1",
+					Conditions: []corev1.PodCondition{
+						{Type: corev1.ContainersReady, Status: corev1.ConditionTrue},
+					},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "app", Ready: true},
+					},
+				},
+			},
+			executor: &warmup.MockExecutor{
+				Result: &warmup.Result{
+					Success:           true,
+					RequestsCompleted: 5,
+					Message:           "warmup completed: 5/5 requests succeeded",
+				},
+			},
+			wantEvents:     []string{ReasonWarmupStarted, ReasonWarmupCompleted, ReasonConditionUpdated},
+			wantEventTypes: []string{corev1.EventTypeNormal, corev1.EventTypeNormal, corev1.EventTypeNormal},
+		},
+		{
+			name: "warmup failure emits started, failed, and condition updated events",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupEnabled: "enabled",
+						webhook.AnnotationWarmupPort:    "8080",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app", Image: "nginx"},
+					},
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: corev1.PodConditionType(webhook.ReadinessGateName)},
+					},
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					PodIP: "10.0.0.1",
+					Conditions: []corev1.PodCondition{
+						{Type: corev1.ContainersReady, Status: corev1.ConditionTrue},
+					},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "app", Ready: true},
+					},
+				},
+			},
+			executor: &warmup.MockExecutor{
+				Result: &warmup.Result{
+					Success:        false,
+					RequestsFailed: 5,
+					Message:        "warmup failed: connection refused",
+				},
+			},
+			wantEvents:     []string{ReasonWarmupStarted, ReasonWarmupFailed, ReasonConditionUpdated},
+			wantEventTypes: []string{corev1.EventTypeNormal, corev1.EventTypeWarning, corev1.EventTypeWarning},
+		},
+		{
+			name: "config error emits started, failed, and condition updated events",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupEnabled: "enabled",
+						// No port annotation and multiple containers - will cause config error
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app1", Image: "nginx"},
+						{Name: "app2", Image: "redis"},
+					},
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: corev1.PodConditionType(webhook.ReadinessGateName)},
+					},
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					PodIP: "10.0.0.1",
+					Conditions: []corev1.PodCondition{
+						{Type: corev1.ContainersReady, Status: corev1.ConditionTrue},
+					},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "app1", Ready: true},
+						{Name: "app2", Ready: true},
+					},
+				},
+			},
+			executor:       nil,
+			wantEvents:     []string{ReasonWarmupStarted, ReasonWarmupFailed, ReasonConditionUpdated},
+			wantEventTypes: []string{corev1.EventTypeNormal, corev1.EventTypeWarning, corev1.EventTypeWarning},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(tt.pod).
+				WithStatusSubresource(tt.pod).
+				Build()
+
+			fakeRecorder := events.NewFakeRecorder(100)
+
+			reconciler := &PodReconciler{
+				Client:         client,
+				Scheme:         scheme,
+				WarmupExecutor: tt.executor,
+				Recorder:       fakeRecorder,
+			}
+
+			req := ctrl.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      tt.pod.Name,
+					Namespace: tt.pod.Namespace,
+				},
+			}
+
+			_, err := reconciler.Reconcile(context.Background(), req)
+			if err != nil {
+				t.Errorf("Reconcile() error = %v", err)
+				return
+			}
+
+			// Collect all events from the recorder
+			close(fakeRecorder.Events)
+			var events []string
+			for event := range fakeRecorder.Events {
+				events = append(events, event)
+			}
+
+			// Verify we got the expected number of events
+			if len(events) != len(tt.wantEvents) {
+				t.Errorf("Got %d events, want %d. Events: %v", len(events), len(tt.wantEvents), events)
+				return
+			}
+
+			// Verify each expected event reason is present in order
+			for i, wantReason := range tt.wantEvents {
+				wantType := tt.wantEventTypes[i]
+				found := false
+				for _, event := range events {
+					// Event format: "EventType Reason Action Message"
+					if strings.Contains(event, wantReason) && strings.Contains(event, wantType) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("Expected event with reason %q and type %q not found. Got events: %v", wantReason, wantType, events)
+				}
+			}
+		})
+	}
 }

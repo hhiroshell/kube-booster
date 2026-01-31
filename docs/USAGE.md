@@ -10,6 +10,7 @@ kube-booster is a Kubernetes controller that ensures smooth application launches
 - Mutating webhook injects readiness gates for annotated pods
 - Controller sends HTTP warmup requests using Vegeta before marking pods ready
 - Fail-open behavior ensures pods become ready even if warmup fails
+- Kubernetes Events emitted for warmup lifecycle visibility via `kubectl describe pod`
 
 ## Prerequisites
 
@@ -259,6 +260,31 @@ Expected flow:
 3. Controller sets `kube-booster.io/warmup-ready` condition to `True`
 4. Pod transitions to READY state
 
+### View Warmup Events
+
+kube-booster emits Kubernetes Events during the warmup lifecycle, visible via `kubectl describe pod`:
+
+```bash
+kubectl describe pod -l app=my-app | grep -A 20 Events
+```
+
+Expected events:
+```
+Events:
+  Type     Reason             Age   From                       Message
+  ----     ------             ----  ----                       -------
+  Normal   WarmupStarted      10s   kube-booster-controller    Starting warmup execution
+  Normal   WarmupCompleted    5s    kube-booster-controller    warmup completed: 5/5 requests succeeded (100.0%), P50=12ms, P99=45ms
+  Normal   ConditionUpdated   5s    kube-booster-controller    Pod condition kube-booster.io/warmup-ready set to True
+```
+
+| Event | Type | Description |
+|-------|------|-------------|
+| `WarmupStarted` | Normal | Warmup execution begins |
+| `WarmupCompleted` | Normal | Warmup completed successfully |
+| `WarmupFailed` | Warning | Warmup failed (config error or request failures) |
+| `ConditionUpdated` | Normal/Warning | Pod condition set to True (Warning if fail-open) |
+
 ### Quick Test
 
 Run a quick smoke test:
@@ -297,15 +323,18 @@ This script verifies:
                        ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  Controller executes warmup requests using Vegeta          │
+│  → Emits WarmupStarted event                              │
 │  → Parses configuration from annotations                  │
 │  → Sends HTTP requests to pod endpoint                    │
 │  → Logs metrics: latencies (P50/P99), success rate        │
+│  → Emits WarmupCompleted or WarmupFailed event            │
 └──────────────────────┬──────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  Controller sets condition kube-booster.io/warmup-ready    │
 │  → Success: condition = True                              │
 │  → Failure: condition = True (fail-open) with warning log │
+│  → Emits ConditionUpdated event                           │
 └──────────────────────┬──────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -470,7 +499,19 @@ kube-booster.io/warmup: "disabled"
 
 ### What happens if warmup fails?
 
-kube-booster uses **fail-open behavior**: if warmup fails (e.g., connection errors, non-200 responses), the pod is still marked as ready. A warning log is emitted with details about the failure. This ensures warmup issues don't prevent pods from becoming ready.
+kube-booster uses **fail-open behavior**: if warmup fails (e.g., connection errors, non-200 responses), the pod is still marked as ready. A `WarmupFailed` warning event is emitted with details about the failure, and a `ConditionUpdated` warning event indicates the fail-open behavior. This ensures warmup issues don't prevent pods from becoming ready.
+
+### How can I see warmup progress and results?
+
+Use `kubectl describe pod <pod-name>` to view warmup events:
+```bash
+kubectl describe pod my-app-pod | grep -A 10 Events
+```
+
+Events show the complete warmup lifecycle:
+- `WarmupStarted` - When warmup begins
+- `WarmupCompleted` or `WarmupFailed` - Warmup result with latency metrics
+- `ConditionUpdated` - When the pod condition is set to True
 
 ### How does port auto-detection work?
 
