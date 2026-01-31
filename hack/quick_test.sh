@@ -144,9 +144,46 @@ else
     echo "   ⚠ No warmup execution logs found (this may be normal if log level is high)"
 fi
 
+# Verify Kubernetes Events
+echo ""
+echo "8. Verifying Kubernetes Events..."
+EVENTS=$(kubectl get events --field-selector involvedObject.name=${TEST_POD} -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null || true)
+
+WARMUP_STARTED=$(echo "$EVENTS" | grep -o "WarmupStarted" || true)
+WARMUP_COMPLETED=$(echo "$EVENTS" | grep -o "WarmupCompleted" || true)
+WARMUP_FAILED=$(echo "$EVENTS" | grep -o "WarmupFailed" || true)
+CONDITION_UPDATED=$(echo "$EVENTS" | grep -o "ConditionUpdated" || true)
+
+if [ -n "$WARMUP_STARTED" ]; then
+    echo "   ✓ WarmupStarted event found"
+else
+    echo "   ⚠ WarmupStarted event not found"
+fi
+
+if [ -n "$WARMUP_COMPLETED" ]; then
+    echo "   ✓ WarmupCompleted event found"
+elif [ -n "$WARMUP_FAILED" ]; then
+    echo "   ⚠ WarmupFailed event found (fail-open behavior)"
+else
+    echo "   ⚠ No WarmupCompleted/WarmupFailed event found"
+fi
+
+if [ -n "$CONDITION_UPDATED" ]; then
+    echo "   ✓ ConditionUpdated event found"
+else
+    echo "   ⚠ ConditionUpdated event not found"
+fi
+
+# Show all warmup-related events
+echo ""
+echo "   Events from kube-booster-controller:"
+kubectl get events --field-selector involvedObject.name=${TEST_POD},source=kube-booster-controller --no-headers 2>/dev/null | while read line; do
+    echo "     $line"
+done || echo "     (no events found)"
+
 # Test without annotation
 echo ""
-echo "8. Testing pod without annotation..."
+echo "9. Testing pod without annotation..."
 kubectl run ${TEST_POD}-no-warmup --image=nginx:1.25 --restart=Never
 
 sleep 2
@@ -162,7 +199,7 @@ fi
 
 # Cleanup
 echo ""
-echo "9. Cleaning up test pods..."
+echo "10. Cleaning up test pods..."
 kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup --ignore-not-found=true
 echo "   ✓ Cleanup complete"
 
@@ -178,6 +215,7 @@ echo "  - Readiness gate injection via mutating webhook"
 echo "  - Warmup configuration via annotations"
 echo "  - HTTP warmup request execution"
 echo "  - Pod condition update after warmup"
+echo "  - Kubernetes Events for warmup lifecycle"
 echo ""
 echo "Next steps:"
 echo "  - Deploy sample application: make deploy-sample"
