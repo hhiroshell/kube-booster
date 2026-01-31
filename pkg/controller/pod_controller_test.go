@@ -628,7 +628,7 @@ func TestPodReconciler_EventRecording(t *testing.T) {
 		wantEventTypes []string // Expected event types (Normal/Warning)
 	}{
 		{
-			name: "warmup success emits started and completed events",
+			name: "warmup success emits started, completed, and condition updated events",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -664,11 +664,11 @@ func TestPodReconciler_EventRecording(t *testing.T) {
 					Message:           "warmup completed: 5/5 requests succeeded",
 				},
 			},
-			wantEvents:     []string{ReasonWarmupStarted, ReasonWarmupCompleted},
-			wantEventTypes: []string{corev1.EventTypeNormal, corev1.EventTypeNormal},
+			wantEvents:     []string{ReasonWarmupStarted, ReasonWarmupCompleted, ReasonConditionUpdated},
+			wantEventTypes: []string{corev1.EventTypeNormal, corev1.EventTypeNormal, corev1.EventTypeNormal},
 		},
 		{
-			name: "warmup failure emits started and failed events",
+			name: "warmup failure emits started, failed, and condition updated events",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -704,11 +704,11 @@ func TestPodReconciler_EventRecording(t *testing.T) {
 					Message:        "warmup failed: connection refused",
 				},
 			},
-			wantEvents:     []string{ReasonWarmupStarted, ReasonWarmupFailed},
-			wantEventTypes: []string{corev1.EventTypeNormal, corev1.EventTypeWarning},
+			wantEvents:     []string{ReasonWarmupStarted, ReasonWarmupFailed, ReasonConditionUpdated},
+			wantEventTypes: []string{corev1.EventTypeNormal, corev1.EventTypeWarning, corev1.EventTypeWarning},
 		},
 		{
-			name: "config error emits started and failed events",
+			name: "config error emits started, failed, and condition updated events",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -740,8 +740,8 @@ func TestPodReconciler_EventRecording(t *testing.T) {
 				},
 			},
 			executor:       nil,
-			wantEvents:     []string{ReasonWarmupStarted, ReasonWarmupFailed},
-			wantEventTypes: []string{corev1.EventTypeNormal, corev1.EventTypeWarning},
+			wantEvents:     []string{ReasonWarmupStarted, ReasonWarmupFailed, ReasonConditionUpdated},
+			wantEventTypes: []string{corev1.EventTypeNormal, corev1.EventTypeWarning, corev1.EventTypeWarning},
 		},
 	}
 
@@ -793,7 +793,8 @@ func TestPodReconciler_EventRecording(t *testing.T) {
 				wantType := tt.wantEventTypes[i]
 				found := false
 				for _, event := range events {
-					if containsEventReason(event, wantReason) && containsEventType(event, wantType) {
+					// Event format: "EventType Reason Action Message"
+					if strings.Contains(event, wantReason) && strings.Contains(event, wantType) {
 						found = true
 						break
 					}
@@ -804,13 +805,4 @@ func TestPodReconciler_EventRecording(t *testing.T) {
 			}
 		})
 	}
-}
-
-func containsEventReason(event, reason string) bool {
-	// Event format: "EventType Reason Message"
-	return strings.Contains(event, reason)
-}
-
-func containsEventType(event, eventType string) bool {
-	return strings.Contains(event, eventType)
 }

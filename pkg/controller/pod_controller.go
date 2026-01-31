@@ -20,9 +20,10 @@ import (
 
 // Event reason constants
 const (
-	ReasonWarmupStarted   = "WarmupStarted"
-	ReasonWarmupCompleted = "WarmupCompleted"
-	ReasonWarmupFailed    = "WarmupFailed"
+	ReasonWarmupStarted    = "WarmupStarted"
+	ReasonWarmupCompleted  = "WarmupCompleted"
+	ReasonWarmupFailed     = "WarmupFailed"
+	ReasonConditionUpdated = "ConditionUpdated"
 )
 
 // PodReconciler reconciles pods with warmup readiness gates
@@ -108,6 +109,8 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			return ctrl.Result{}, setErr
 		}
 		logger.Info("warmup skipped due to config error (fail-open)", "error", err)
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeWarning, ReasonConditionUpdated, "UpdateCondition",
+			"Pod condition %s set to True (fail-open)", webhook.ConditionTypeWarmupReady)
 		return ctrl.Result{}, nil
 	}
 
@@ -150,6 +153,13 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, err
 	}
 	logger.Info("pod condition updated to True", "failOpen", !result.Success)
+	if result.Success {
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonConditionUpdated, "UpdateCondition",
+			"Pod condition %s set to True", webhook.ConditionTypeWarmupReady)
+	} else {
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeWarning, ReasonConditionUpdated, "UpdateCondition",
+			"Pod condition %s set to True (fail-open)", webhook.ConditionTypeWarmupReady)
+	}
 
 	return ctrl.Result{}, nil
 }
