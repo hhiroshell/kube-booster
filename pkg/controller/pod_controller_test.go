@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -807,22 +808,9 @@ func TestPodReconciler_EventRecording(t *testing.T) {
 
 func containsEventReason(event, reason string) bool {
 	// Event format: "EventType Reason Message"
-	return len(event) > 0 && contains(event, reason)
+	return strings.Contains(event, reason)
 }
 
 func containsEventType(event, eventType string) bool {
-	return len(event) > 0 && contains(event, eventType)
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && findSubstring(s, substr)
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(event, eventType)
 }

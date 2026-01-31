@@ -134,20 +134,22 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		logger.Info("warmup skipped: no executor configured")
 	}
 
+	// Log and emit events for warmup result first
+	if result.Success {
+		logger.Info("warmup completed successfully", "message", result.Message)
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupCompleted, "CompleteWarmup", "%s", result.Message)
+	} else {
+		logger.Info("warmup failed", "message", result.Message, "error", result.Error)
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeWarning, ReasonWarmupFailed, "FailWarmup",
+			"Warmup failed: %s", result.Message)
+	}
+
 	// Set condition to True (fail-open behavior: always True even if warmup fails)
 	if err := r.setConditionTrue(ctx, pod, result); err != nil {
 		logger.Error(err, "failed to update pod condition")
 		return ctrl.Result{}, err
 	}
-
-	if result.Success {
-		logger.Info("warmup completed successfully", "message", result.Message)
-		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupCompleted, "CompleteWarmup", "%s", result.Message)
-	} else {
-		logger.Info("warmup completed with issues (fail-open)", "message", result.Message, "error", result.Error)
-		r.Recorder.Eventf(pod, nil, corev1.EventTypeWarning, ReasonWarmupFailed, "FailWarmup",
-			"Warmup failed (fail-open): %s", result.Message)
-	}
+	logger.Info("pod condition updated to True", "failOpen", !result.Success)
 
 	return ctrl.Result{}, nil
 }
