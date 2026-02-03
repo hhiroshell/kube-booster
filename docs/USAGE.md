@@ -531,8 +531,13 @@ After warmup completes, the controller logs:
 - P50 and P99 latencies
 - Overall success rate
 
+### Are Prometheus metrics available?
+
+Yes! kube-booster exports Prometheus metrics on the controller's metrics endpoint (`:8080/metrics`). See [OBSERVABILITY.md](OBSERVABILITY.md) for available metrics, PromQL examples, alerting rules, and a sample Grafana dashboard.
+
 ## Next Steps
 
+- Review [OBSERVABILITY.md](OBSERVABILITY.md) for Prometheus metrics and Grafana dashboards
 - Review [DEVELOPMENT.md](DEVELOPMENT.md) for building from source and contributing
 - Check [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for technical details
 - See [CLAUDE.md](../CLAUDE.md) for architecture and future roadmap
