@@ -178,6 +178,43 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 - **Fail-open behavior**: Pods marked ready even if warmup fails
 - Warning logs emitted on warmup failure
 
+### Prometheus Metrics
+
+#### Metrics Package (`pkg/metrics/`)
+
+**Files Created:**
+- `metrics.go` - Prometheus metric definitions and helper functions
+- `metrics_test.go` - Unit tests for all metric recording functions (100% coverage)
+
+**Metrics Defined:**
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `kube_booster_warmup_total` | Counter | `namespace`, `result` | Total warmup executions (result: success/failure) |
+| `kube_booster_warmup_requests_total` | Counter | `namespace` | Total HTTP requests sent during warmup |
+| `kube_booster_warmup_duration_seconds` | Histogram | `namespace` | Time from warmup start to completion |
+| `kube_booster_warmup_request_latency_seconds` | Histogram | `namespace` | Individual request latency during warmup |
+| `kube_booster_pods_pending_warmup` | Gauge | `namespace`, `node` | Pods currently waiting for warmup |
+
+**Helper Functions:**
+- `RecordWarmupResult(namespace, success, durationSeconds)` - Records warmup outcome and duration
+- `RecordWarmupRequests(namespace, count)` - Records HTTP request count
+- `RecordRequestLatency(namespace, latencySeconds)` - Records request latency observation
+- `IncrementPodsPendingWarmup(namespace, node)` - Increments pending pods gauge
+- `DecrementPodsPendingWarmup(namespace, node)` - Decrements pending pods gauge
+
+**Registration:**
+- Metrics registered via `init()` using `controller-runtime`'s metrics registry
+- Blank import in `cmd/controller/main.go` triggers registration
+
+**Controller Integration:**
+- Pending pods gauge incremented/decremented around warmup execution
+- Warmup result, duration, request count, and latencies recorded on completion
+- Metrics exposed on controller's metrics endpoint (default `:8080/metrics`)
+
+**Documentation & Samples:**
+- `docs/OBSERVABILITY.md` - Comprehensive guide with Prometheus scrape config, ServiceMonitor example, PromQL queries, alerting rules, and troubleshooting
+- `config/samples/grafana-dashboard.json` - Sample Grafana dashboard with panels for success rate, duration percentiles, request latency, pending pods, and throughput
+
 ### Kubernetes Events
 
 **Event Recording:**
@@ -207,8 +244,9 @@ Events:
 ## Test Coverage
 
 - **pkg/webhook**: 84.2% coverage
-- **pkg/controller**: 71.0% coverage
+- **pkg/controller**: 71.3% coverage
 - **pkg/warmup**: 92.9% coverage
+- **pkg/metrics**: 100.0% coverage
 
 All tests pass successfully.
 
@@ -259,8 +297,14 @@ User deploys pod with annotation
 4. Verify pod phase is Running
 5. Verify all container statuses are ready
 6. Verify ContainersReady condition is True
-7. Set warmup condition to True and update pod status
-8. Requeue with delay if conditions not yet met
+7. Increment pending warmup gauge, emit `WarmupStarted` event
+8. Parse warmup config from annotations
+9. Execute warmup requests via Vegeta
+10. Decrement pending warmup gauge, record metrics (result, duration, latency, requests)
+11. Emit `WarmupCompleted` or `WarmupFailed` event
+12. Set warmup condition to True and update pod status
+13. Emit `ConditionUpdated` event
+14. Requeue with delay if conditions not yet met
 
 ### Fail-Open Design
 - Webhook has `failurePolicy: Ignore`
@@ -305,10 +349,30 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ✅ RBAC configured for `events.k8s.io` API group
 ✅ Unit tests for event recording
 
+## Success Criteria - Prometheus Metrics
+
+✅ Prometheus metrics registered via controller-runtime metrics registry
+✅ Counter for warmup executions by namespace and result (success/failure)
+✅ Counter for total HTTP requests sent during warmup
+✅ Histogram for warmup duration with default buckets
+✅ Histogram for request latency with custom buckets
+✅ Gauge for pods pending warmup by namespace and node
+✅ Controller instrumented to record metrics at warmup start/completion
+✅ Metrics exposed on `:8080/metrics` endpoint
+✅ Comprehensive observability documentation with PromQL queries and alerting rules
+✅ Sample Grafana dashboard provided
+✅ 100% test coverage on metrics package
+
+### Known Issues Under Review (PR #17)
+
+- Gauge leak: `pods_pending_warmup` not decremented on config parse error path
+- Latency histogram records pre-aggregated P50/P99 from Vegeta instead of individual observations
+- Metrics recorded for "no executor" skip case may skew dashboard values
+
 ## What's NOT Implemented (Future Scope)
 
 - gRPC warmup support
-- Prometheus metrics export
+- ~~Prometheus metrics export~~ ✅ Implemented
 - ~~Kubernetes events for warmup results~~ ✅ Implemented
 - CRD support for complex warmup scenarios (`WarmupConfig`)
 - Multiple sequential warmup endpoints
@@ -318,10 +382,10 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ## File Summary
 
 **Go Code:**
-- 4 packages: webhook, controller, warmup, main
-- 10 Go source files (5 test files)
-- ~1200 lines of code (excluding tests)
-- ~800 lines of test code
+- 5 packages: webhook, controller, warmup, metrics, main
+- 12 Go source files (6 test files)
+- ~1300 lines of code (excluding tests)
+- ~960 lines of test code
 
 **Kubernetes Manifests:**
 - 9 YAML files
@@ -329,7 +393,7 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 - Sample application
 
 **Documentation:**
-- 3 markdown files (CLAUDE.md, USAGE.md, IMPLEMENTATION_SUMMARY.md)
+- 4 markdown files (CLAUDE.md, USAGE.md, IMPLEMENTATION_SUMMARY.md, OBSERVABILITY.md)
 
 **Scripts:**
 - 1 bash script (certificate generation)
@@ -338,7 +402,7 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 
 Future enhancements:
 1. **gRPC Support**: Add gRPC warmup request capability
-2. **Prometheus Metrics**: Export warmup metrics for monitoring dashboards
+2. ~~**Prometheus Metrics**: Export warmup metrics for monitoring dashboards~~ ✅ Implemented
 3. ~~**Kubernetes Events**: Record warmup results as pod events~~ ✅ Implemented
 4. **WarmupConfig CRD**: Support complex warmup scenarios with multiple endpoints
 5. **Retry Logic**: Add configurable retry with exponential backoff
@@ -376,7 +440,6 @@ Future enhancements:
 - HTTP only (no gRPC support)
 - Self-signed certificates for local testing only
 - No automated certificate rotation
-- No Prometheus metrics export
 - No CRD for advanced warmup configurations
 - Single attempt per warmup (no retry logic)
 - No distributed tracing integration
@@ -389,8 +452,9 @@ The implementation is complete and ready for testing. The system provides:
 ✓ HTTP warmup requests using Vegeta load testing library
 ✓ Fail-open behavior ensuring pod availability
 ✓ Kubernetes Events for warmup lifecycle visibility
-✓ Good test coverage (84.2% webhook, 92.9% warmup, 71.0% controller)
-✓ Comprehensive documentation
+✓ Prometheus metrics for monitoring and alerting
+✓ Good test coverage (84.2% webhook, 92.9% warmup, 71.3% controller, 100% metrics)
+✓ Comprehensive documentation (usage, development, observability)
 ✓ Straightforward deployment
 ✓ Kubernetes best practices (readiness gates, controller-runtime, new events API)
 

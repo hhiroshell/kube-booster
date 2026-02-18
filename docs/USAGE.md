@@ -11,6 +11,7 @@ kube-booster is a Kubernetes controller that ensures smooth application launches
 - Controller sends HTTP warmup requests using Vegeta before marking pods ready
 - Fail-open behavior ensures pods become ready even if warmup fails
 - Kubernetes Events emitted for warmup lifecycle visibility via `kubectl describe pod`
+- Prometheus metrics exported for monitoring warmup performance and alerting
 
 ## Prerequisites
 
@@ -326,7 +327,7 @@ This script verifies:
 │  → Emits WarmupStarted event                              │
 │  → Parses configuration from annotations                  │
 │  → Sends HTTP requests to pod endpoint                    │
-│  → Logs metrics: latencies (P50/P99), success rate        │
+│  → Records Prometheus metrics (duration, latency, counts) │
 │  → Emits WarmupCompleted or WarmupFailed event            │
 └──────────────────────┬──────────────────────────────────────┘
                        ↓
@@ -530,6 +531,8 @@ After warmup completes, the controller logs:
 - Success/failure count
 - P50 and P99 latencies
 - Overall success rate
+
+Additionally, Prometheus metrics are recorded for each warmup execution including duration, request count, latency, and success/failure counters. See the next FAQ for details.
 
 ### Are Prometheus metrics available?
 

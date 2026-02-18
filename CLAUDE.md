@@ -21,6 +21,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - Architecture flow and component interactions
    - Test coverage and success criteria
 
+4. **docs/OBSERVABILITY.md** - Prometheus metrics and monitoring
+   - Available metrics and their labels
+   - PromQL queries and alerting rules
+   - Grafana dashboard setup
+
 When asked to implement features, fix bugs, or make changes:
 1. First read docs/DEVELOPMENT.md to understand the codebase structure
 2. Review relevant sections based on the task
@@ -76,6 +81,8 @@ spec:
 **Observability:**
 - Kubernetes Events emitted for warmup lifecycle (visible via `kubectl describe pod`)
 - Events: `WarmupStarted`, `WarmupCompleted`, `WarmupFailed`, `ConditionUpdated`
+- Prometheus metrics exported on `:8080/metrics` for monitoring and alerting
+- See `docs/OBSERVABILITY.md` for full details, PromQL queries, and Grafana dashboard
 
 **Opt-out:**
 Pods without the `kube-booster.io/warmup: "enabled"` annotation are not affected by the controller.
@@ -116,10 +123,11 @@ annotations:
 - `pkg/controller/`: Core controller logic for watching pods and managing readiness gates
 - `pkg/warmup/`: Warmup request execution logic (HTTP/gRPC)
 - `pkg/webhook/`: Mutating webhook for injecting readiness gates
+- `pkg/metrics/`: Prometheus metrics definitions and recording helpers
 - `config/crd/`: Custom Resource Definitions (Phase 2)
 - `config/rbac/`: RBAC roles and bindings for controller permissions
 - `config/webhook/`: Webhook configuration and certificates
-- `config/samples/`: Example configurations for users
+- `config/samples/`: Example configurations and Grafana dashboard
 
 ### Implementation Pattern
 
@@ -129,12 +137,13 @@ The controller follows the standard Kubernetes controller pattern with readiness
 2. If pod has `kube-booster.io/warmup: "enabled"`, inject readiness gate: `kube-booster.io/warmup-ready`
 3. **Controller** watches pods with the injected readiness gate
 4. Controller waits for containers to be ready, then emits `WarmupStarted` event
-5. Controller parses warmup config from annotations
+5. Controller increments `pods_pending_warmup` gauge and parses warmup config from annotations
 6. Controller sends HTTP warmup requests using Vegeta load testing library
-7. Controller emits `WarmupCompleted` or `WarmupFailed` event with result details
-8. Controller updates pod condition `kube-booster.io/warmup-ready` to `True` when warmup completes (or on failure, fail-open)
-9. Controller emits `ConditionUpdated` event
-10. Kubernetes marks pod as READY only after all readiness gates are satisfied
+7. Controller decrements `pods_pending_warmup` gauge and records Prometheus metrics (duration, latency, request count)
+8. Controller emits `WarmupCompleted` or `WarmupFailed` event with result details
+9. Controller updates pod condition `kube-booster.io/warmup-ready` to `True` when warmup completes (or on failure, fail-open)
+10. Controller emits `ConditionUpdated` event
+11. Kubernetes marks pod as READY only after all readiness gates are satisfied
 
 ## Development Commands
 
@@ -222,6 +231,7 @@ Key differentiator: kube-booster aims to be a cluster-wide controller solution r
 2. Review the relevant package documentation:
    - Working on webhook? See `pkg/webhook/` section in docs/DEVELOPMENT.md
    - Working on controller? See `pkg/controller/` section in docs/DEVELOPMENT.md
+   - Working on metrics? See `pkg/metrics/` section in docs/DEVELOPMENT.md and docs/OBSERVABILITY.md
    - Working on main entry point? See `cmd/controller/` section in docs/DEVELOPMENT.md
 
 ### When Making Changes
@@ -258,7 +268,8 @@ When you make changes that affect:
 - **User behavior** → Update docs/USAGE.md
 - **Development workflow** → Update docs/DEVELOPMENT.md
 - **Architecture** → Update CLAUDE.md and docs/IMPLEMENTATION_SUMMARY.md
-- **New annotations/config** → Update all three docs
+- **Metrics/Observability** → Update docs/OBSERVABILITY.md
+- **New annotations/config** → Update all docs
 
 ### Key Principles
 
@@ -278,4 +289,5 @@ When you make changes that affect:
 | Running tests | docs/DEVELOPMENT.md → "Running Tests" |
 | Debugging issues | docs/DEVELOPMENT.md → "Debugging" |
 | User-facing changes | docs/USAGE.md |
+| Metrics & monitoring | docs/OBSERVABILITY.md |
 | Future planning | CLAUDE.md (this file) + docs/IMPLEMENTATION_SUMMARY.md |

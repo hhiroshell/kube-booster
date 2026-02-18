@@ -165,8 +165,9 @@ go tool cover -html=coverage.out
 
 Current coverage:
 - `pkg/webhook`: 84.2%
-- `pkg/controller`: 71.0%
+- `pkg/controller`: 71.3%
 - `pkg/warmup`: 92.9%
+- `pkg/metrics`: 100.0%
 
 ### Running Tests
 
@@ -180,6 +181,7 @@ make test
 go test ./pkg/controller/... -v
 go test ./pkg/webhook/... -v
 go test ./pkg/warmup/... -v
+go test ./pkg/metrics/... -v
 ```
 
 ## Code Quality
@@ -226,6 +228,9 @@ kube-booster/
 │   │   ├── pod_controller.go     # Reconciler implementation
 │   │   ├── pod_controller_test.go
 │   │   └── predicates.go         # Event filters
+│   ├── metrics/
+│   │   ├── metrics.go            # Prometheus metric definitions & helpers
+│   │   └── metrics_test.go
 │   ├── warmup/
 │   │   ├── config.go             # Configuration parsing
 │   │   ├── config_test.go
@@ -248,7 +253,8 @@ kube-booster/
 │   ├── controller/              # Controller manifests
 │   │   └── daemonset.yaml        # Controller DaemonSet (node-local)
 │   ├── samples/                 # Sample applications
-│   │   └── sample_deployment.yaml
+│   │   ├── sample_deployment.yaml
+│   │   └── grafana-dashboard.json  # Sample Grafana dashboard
 │   └── kustomization.yaml       # Kustomize config
 ├── hack/
 │   ├── generate_certs.sh        # Certificate generation
@@ -440,6 +446,28 @@ In this architecture, both webhook and controller run in a single deployment:
   - `Message` - Human-readable summary
 - `String()` method for formatted logging
 
+#### Metrics Package (pkg/metrics/)
+
+**metrics.go**
+- Defines Prometheus metrics registered via controller-runtime's metrics registry
+- Provides helper functions for recording warmup outcomes
+- Registration via `init()` triggered by blank import in `main.go`
+
+**Metrics:**
+- `kube_booster_warmup_total` (Counter) - Total warmup executions by namespace/result
+- `kube_booster_warmup_requests_total` (Counter) - Total HTTP requests sent
+- `kube_booster_warmup_duration_seconds` (Histogram) - Warmup duration
+- `kube_booster_warmup_request_latency_seconds` (Histogram) - Request latency
+- `kube_booster_pods_pending_warmup` (Gauge) - Pods currently pending warmup
+
+**Key functions:**
+- `RecordWarmupResult(namespace, success, durationSeconds)` - Records outcome and duration
+- `RecordWarmupRequests(namespace, count)` - Records HTTP request count
+- `RecordRequestLatency(namespace, latencySeconds)` - Records latency observation
+- `IncrementPodsPendingWarmup(namespace, node)` / `DecrementPodsPendingWarmup(namespace, node)` - Manages pending gauge
+
+See [OBSERVABILITY.md](OBSERVABILITY.md) for PromQL queries, alerting rules, and Grafana dashboard.
+
 #### Main Entry Point (cmd/controller/main.go)
 
 - Initializes controller-runtime manager
@@ -471,6 +499,14 @@ Controller watch event (filtered by predicate)
 PodReconciler.Reconcile()
     ↓
 Check containers ready
+    ↓
+Increment pending warmup gauge + emit WarmupStarted event
+    ↓
+Execute warmup requests via Vegeta
+    ↓
+Decrement pending warmup gauge + record metrics
+    ↓
+Emit WarmupCompleted/WarmupFailed event
     ↓
 Update pod condition
     ↓
@@ -794,7 +830,7 @@ HTTP warmup execution is complete. See [CLAUDE.md](../CLAUDE.md) for the complet
    - Protocol detection from annotations
 
 2. **Observability Enhancements**
-   - Prometheus metrics export
+   - ~~Prometheus metrics export~~ ✅ Implemented
    - ~~Kubernetes events for warmup results~~ ✅ Implemented
    - Distributed tracing integration
 
@@ -816,6 +852,7 @@ HTTP warmup execution is complete. See [CLAUDE.md](../CLAUDE.md) for the complet
 ## Getting Help
 
 - Check [USAGE.md](USAGE.md) for user documentation
+- Check [OBSERVABILITY.md](OBSERVABILITY.md) for Prometheus metrics and Grafana dashboards
 - Review [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for technical details
 - Open an issue on GitHub for bugs or feature requests
 - Join discussions for questions and ideas
