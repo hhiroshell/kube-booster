@@ -13,7 +13,7 @@ kube-booster exports Prometheus metrics on the controller's metrics endpoint (de
 | `kube_booster_warmup_total` | Counter | `namespace`, `result` | Total warmup executions (result: success/failure) |
 | `kube_booster_warmup_requests_total` | Counter | `namespace` | Total HTTP requests sent during warmup |
 | `kube_booster_warmup_duration_seconds` | Histogram | `namespace` | Time from warmup start to completion |
-| `kube_booster_warmup_request_latency_seconds` | Histogram | `namespace` | Individual request latency during warmup |
+| `kube_booster_warmup_request_latency_seconds` | Gauge | `namespace`, `quantile` | Request latency percentiles from the most recent warmup |
 | `kube_booster_pods_pending_warmup` | Gauge | `namespace`, `node` | Pods currently waiting for warmup |
 
 ### Metric Details
@@ -39,10 +39,11 @@ This metric helps identify slow warmups that may delay pod readiness.
 
 #### kube_booster_warmup_request_latency_seconds
 
-A histogram tracking individual request latencies observed during warmup. Uses custom buckets optimized for HTTP latencies:
-`.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10` seconds.
+A gauge tracking request latency percentiles from the most recent warmup execution. Labeled by:
+- `namespace`: The Kubernetes namespace of the pod
+- `quantile`: The percentile value (`0.5` for P50, `0.99` for P99)
 
-Records P50 and P99 latencies from Vegeta results for each warmup execution.
+Values are set from Vegeta's pre-computed percentiles after each warmup and reflect the latest execution per namespace.
 
 #### kube_booster_pods_pending_warmup
 
@@ -137,11 +138,17 @@ histogram_quantile(0.50, sum(rate(kube_booster_warmup_duration_seconds_bucket[5m
 ### Request Latency Analysis
 
 ```promql
+# P50 request latency
+kube_booster_warmup_request_latency_seconds{quantile="0.5"}
+
 # P99 request latency
-histogram_quantile(0.99, sum(rate(kube_booster_warmup_request_latency_seconds_bucket[5m])) by (le))
+kube_booster_warmup_request_latency_seconds{quantile="0.99"}
 
 # P50 request latency by namespace
-histogram_quantile(0.50, sum(rate(kube_booster_warmup_request_latency_seconds_bucket[5m])) by (le, namespace))
+kube_booster_warmup_request_latency_seconds{quantile="0.5"} by (namespace)
+
+# P99 request latency by namespace
+kube_booster_warmup_request_latency_seconds{quantile="0.99"} by (namespace)
 ```
 
 ### Pending Pods
@@ -215,7 +222,7 @@ groups:
       # Alert on high request latency
       - alert: KubeBoosterHighRequestLatency
         expr: |
-          histogram_quantile(0.99, sum(rate(kube_booster_warmup_request_latency_seconds_bucket[5m])) by (le))
+          max(kube_booster_warmup_request_latency_seconds{quantile="0.99"})
           > 5
         for: 5m
         labels:

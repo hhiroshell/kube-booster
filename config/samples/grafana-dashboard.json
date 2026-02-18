@@ -405,7 +405,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.50, sum(rate(kube_booster_warmup_request_latency_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+          "expr": "kube_booster_warmup_request_latency_seconds{namespace=~\"$namespace\", quantile=\"0.5\"}",
           "legendFormat": "P50",
           "refId": "A"
         },
@@ -414,7 +414,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, sum(rate(kube_booster_warmup_request_latency_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+          "expr": "kube_booster_warmup_request_latency_seconds{namespace=~\"$namespace\", quantile=\"0.99\"}",
           "legendFormat": "P99",
           "refId": "B"
         }

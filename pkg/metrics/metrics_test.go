@@ -92,13 +92,37 @@ func TestRecordWarmupRequests_Accumulates(t *testing.T) {
 func TestRecordRequestLatency(t *testing.T) {
 	WarmupRequestLatencySeconds.Reset()
 
-	RecordRequestLatency("default", 0.05)
-	RecordRequestLatency("default", 0.1)
+	RecordRequestLatency("default", 0.05, 0.2)
 
-	// Verify histogram has observations
-	count := testutil.CollectAndCount(WarmupRequestLatencySeconds)
-	if count == 0 {
-		t.Error("expected histogram to have observations")
+	// Verify P50 gauge value
+	p50 := testutil.ToFloat64(WarmupRequestLatencySeconds.WithLabelValues("default", "0.5"))
+	if p50 != 0.05 {
+		t.Errorf("expected P50 = 0.05, got %f", p50)
+	}
+
+	// Verify P99 gauge value
+	p99 := testutil.ToFloat64(WarmupRequestLatencySeconds.WithLabelValues("default", "0.99"))
+	if p99 != 0.2 {
+		t.Errorf("expected P99 = 0.2, got %f", p99)
+	}
+}
+
+func TestRecordRequestLatency_Overwrites(t *testing.T) {
+	WarmupRequestLatencySeconds.Reset()
+
+	// First warmup
+	RecordRequestLatency("default", 0.05, 0.2)
+	// Second warmup overwrites
+	RecordRequestLatency("default", 0.03, 0.15)
+
+	p50 := testutil.ToFloat64(WarmupRequestLatencySeconds.WithLabelValues("default", "0.5"))
+	if p50 != 0.03 {
+		t.Errorf("expected P50 = 0.03 after overwrite, got %f", p50)
+	}
+
+	p99 := testutil.ToFloat64(WarmupRequestLatencySeconds.WithLabelValues("default", "0.99"))
+	if p99 != 0.15 {
+		t.Errorf("expected P99 = 0.15 after overwrite, got %f", p99)
 	}
 }
 

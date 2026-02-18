@@ -34,14 +34,13 @@ var (
 		[]string{"namespace"},
 	)
 
-	// WarmupRequestLatencySeconds is a histogram tracking individual request latency during warmup
-	WarmupRequestLatencySeconds = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "kube_booster_warmup_request_latency_seconds",
-			Help:    "Individual request latency during warmup",
-			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+	// WarmupRequestLatencySeconds is a gauge tracking request latency percentiles from the most recent warmup
+	WarmupRequestLatencySeconds = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "kube_booster_warmup_request_latency_seconds",
+			Help: "Request latency percentiles from the most recent warmup execution",
 		},
-		[]string{"namespace"},
+		[]string{"namespace", "quantile"},
 	)
 
 	// PodsPendingWarmup is a gauge tracking pods currently waiting for warmup
@@ -79,9 +78,10 @@ func RecordWarmupRequests(namespace string, count int) {
 	WarmupRequestsTotal.WithLabelValues(namespace).Add(float64(count))
 }
 
-// RecordRequestLatency records an individual request latency observation
-func RecordRequestLatency(namespace string, latencySeconds float64) {
-	WarmupRequestLatencySeconds.WithLabelValues(namespace).Observe(latencySeconds)
+// RecordRequestLatency records P50 and P99 request latency from a warmup execution
+func RecordRequestLatency(namespace string, p50Seconds, p99Seconds float64) {
+	WarmupRequestLatencySeconds.WithLabelValues(namespace, "0.5").Set(p50Seconds)
+	WarmupRequestLatencySeconds.WithLabelValues(namespace, "0.99").Set(p99Seconds)
 }
 
 // IncrementPodsPendingWarmup increments the pending pods gauge for a namespace/node
