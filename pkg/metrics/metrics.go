@@ -94,7 +94,8 @@ func DecrementPodsPendingWarmup(namespace, node string) {
 	PodsPendingWarmup.WithLabelValues(namespace, node).Dec()
 }
 
-// SetPodsPendingWarmup sets the pending pods gauge to a specific value
+// SetPodsPendingWarmup sets the pending pods gauge to a specific value.
+// Exported for use in tests to set up initial gauge values.
 func SetPodsPendingWarmup(namespace, node string, count float64) {
 	PodsPendingWarmup.WithLabelValues(namespace, node).Set(count)
 }
