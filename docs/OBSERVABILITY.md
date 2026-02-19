@@ -283,6 +283,13 @@ The metrics use namespace-level labels to avoid high cardinality issues:
 - Pod names are NOT included in counter/histogram labels
 - Node names are only used in the gauge metric (bounded by cluster size)
 
+**`kube_booster_pods_pending_warmup` cardinality note:** This gauge uses both `namespace` and `node` labels, so the maximum cardinality is `namespaces x nodes`. In large clusters (e.g., 100 namespaces, 500 nodes), this could produce up to 50,000 time series in theory. In practice, cardinality is much lower because:
+- Only active combinations (pods currently pending warmup) produce time series
+- Warmup activity is typically concentrated in a subset of namespaces
+- The `node` label provides valuable operational insight for identifying node-level warmup bottlenecks
+
+If cardinality becomes a concern, consider using Prometheus relabeling to drop the `node` label at scrape time.
+
 ### Retention Recommendations
 
 - Keep at least 7 days of data for trend analysis
