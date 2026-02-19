@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -63,6 +64,36 @@ func TestRecordWarmupResult_MultipleNamespaces(t *testing.T) {
 	ns2Success := testutil.ToFloat64(WarmupTotal.WithLabelValues("ns2", "success"))
 	if ns2Success != 1 {
 		t.Errorf("expected ns2 success=1, got %f", ns2Success)
+	}
+}
+
+func TestRecordWarmupResult_RecordsDuration(t *testing.T) {
+	WarmupTotal.Reset()
+	WarmupDurationSeconds.Reset()
+
+	RecordWarmupResult("default", true, 5.0)
+
+	expected := strings.NewReader(`
+# HELP kube_booster_warmup_duration_seconds Time from warmup start to completion
+# TYPE kube_booster_warmup_duration_seconds histogram
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="0.005"} 0
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="0.01"} 0
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="0.025"} 0
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="0.05"} 0
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="0.1"} 0
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="0.25"} 0
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="0.5"} 0
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="1"} 0
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="2.5"} 0
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="5"} 1
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="10"} 1
+kube_booster_warmup_duration_seconds_bucket{namespace="default",le="+Inf"} 1
+kube_booster_warmup_duration_seconds_sum{namespace="default"} 5
+kube_booster_warmup_duration_seconds_count{namespace="default"} 1
+`)
+
+	if err := testutil.CollectAndCompare(WarmupDurationSeconds, expected, "kube_booster_warmup_duration_seconds"); err != nil {
+		t.Errorf("unexpected histogram state: %v", err)
 	}
 }
 
