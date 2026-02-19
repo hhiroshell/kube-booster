@@ -360,12 +360,6 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ✅ Sample Grafana dashboard provided
 ✅ 100% test coverage on metrics package
 
-### Known Issues Under Review (PR #17)
-
-- Gauge leak: `pods_pending_warmup` not decremented on config parse error path
-- Latency histogram records pre-aggregated P50/P99 from Vegeta instead of individual observations
-- Metrics recorded for "no executor" skip case may skew dashboard values
-
 ## What's NOT Implemented (Future Scope)
 
 - gRPC warmup support
