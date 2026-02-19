@@ -252,18 +252,6 @@ The metrics use namespace-level labels to avoid high cardinality issues:
 
 If cardinality becomes a concern, consider using Prometheus relabeling to drop the `node` label at scrape time.
 
-### Retention Recommendations
-
-- Keep at least 7 days of data for trend analysis
-- Use recording rules for frequently-queried aggregations
-
-### Dashboard Organization
-
-Consider organizing dashboards by:
-1. **Overview**: Cluster-wide warmup health
-2. **By Namespace**: Drill down into specific namespaces
-3. **By Application**: Filter by labels for app-specific views
-
 ## Troubleshooting
 
 ### Metrics Not Appearing
