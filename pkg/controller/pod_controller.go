@@ -146,11 +146,6 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if r.WarmupExecutor != nil {
 		metrics.RecordWarmupResult(pod.Namespace, result.Success, result.TotalDuration.Seconds())
 		metrics.RecordWarmupRequests(pod.Namespace, result.RequestsCompleted+result.RequestsFailed)
-
-		// Record latency metrics (P50 and P99 from Vegeta results)
-		if result.LatencyP50 > 0 || result.LatencyP99 > 0 {
-			metrics.RecordRequestLatency(pod.Namespace, result.LatencyP50.Seconds(), result.LatencyP99.Seconds())
-		}
 	}
 
 	// Log and emit events for warmup result first

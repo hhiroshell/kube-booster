@@ -139,7 +139,7 @@ The controller follows the standard Kubernetes controller pattern with readiness
 4. Controller waits for containers to be ready, then emits `WarmupStarted` event
 5. Controller increments `pods_pending_warmup` gauge and parses warmup config from annotations
 6. Controller sends HTTP warmup requests using Vegeta load testing library
-7. Controller decrements `pods_pending_warmup` gauge and records Prometheus metrics (duration, latency, request count)
+7. Controller decrements `pods_pending_warmup` gauge and records Prometheus metrics (duration, request count)
 8. Controller emits `WarmupCompleted` or `WarmupFailed` event with result details
 9. Controller updates pod condition `kube-booster.io/warmup-ready` to `True` when warmup completes (or on failure, fail-open)
 10. Controller emits `ConditionUpdated` event

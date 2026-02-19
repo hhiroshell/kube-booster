@@ -457,13 +457,11 @@ In this architecture, both webhook and controller run in a single deployment:
 - `kube_booster_warmup_total` (Counter) - Total warmup executions by namespace/result
 - `kube_booster_warmup_requests_total` (Counter) - Total HTTP requests sent
 - `kube_booster_warmup_duration_seconds` (Histogram) - Warmup duration
-- `kube_booster_warmup_request_latency_seconds` (Histogram) - Request latency
 - `kube_booster_pods_pending_warmup` (Gauge) - Pods currently pending warmup
 
 **Key functions:**
 - `RecordWarmupResult(namespace, success, durationSeconds)` - Records outcome and duration
 - `RecordWarmupRequests(namespace, count)` - Records HTTP request count
-- `RecordRequestLatency(namespace, latencySeconds)` - Records latency observation
 - `IncrementPodsPendingWarmup(namespace, node)` / `DecrementPodsPendingWarmup(namespace, node)` - Manages pending gauge
 
 See [OBSERVABILITY.md](OBSERVABILITY.md) for PromQL queries, alerting rules, and Grafana dashboard.
@@ -504,7 +502,7 @@ Increment pending warmup gauge + emit WarmupStarted event
     ↓
 Execute warmup requests via Vegeta
     ↓
-Decrement pending warmup gauge + record metrics
+Decrement pending warmup gauge + record metrics (result, duration, requests)
     ↓
 Emit WarmupCompleted/WarmupFailed event
     ↓

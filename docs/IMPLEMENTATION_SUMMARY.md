@@ -192,13 +192,11 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 | `kube_booster_warmup_total` | Counter | `namespace`, `result` | Total warmup executions (result: success/failure) |
 | `kube_booster_warmup_requests_total` | Counter | `namespace` | Total HTTP requests sent during warmup |
 | `kube_booster_warmup_duration_seconds` | Histogram | `namespace` | Time from warmup start to completion |
-| `kube_booster_warmup_request_latency_seconds` | Histogram | `namespace` | Individual request latency during warmup |
 | `kube_booster_pods_pending_warmup` | Gauge | `namespace`, `node` | Pods currently waiting for warmup |
 
 **Helper Functions:**
 - `RecordWarmupResult(namespace, success, durationSeconds)` - Records warmup outcome and duration
 - `RecordWarmupRequests(namespace, count)` - Records HTTP request count
-- `RecordRequestLatency(namespace, latencySeconds)` - Records request latency observation
 - `IncrementPodsPendingWarmup(namespace, node)` - Increments pending pods gauge
 - `DecrementPodsPendingWarmup(namespace, node)` - Decrements pending pods gauge
 
@@ -300,7 +298,7 @@ User deploys pod with annotation
 7. Increment pending warmup gauge, emit `WarmupStarted` event
 8. Parse warmup config from annotations
 9. Execute warmup requests via Vegeta
-10. Decrement pending warmup gauge, record metrics (result, duration, latency, requests)
+10. Decrement pending warmup gauge, record metrics (result, duration, requests)
 11. Emit `WarmupCompleted` or `WarmupFailed` event
 12. Set warmup condition to True and update pod status
 13. Emit `ConditionUpdated` event
@@ -355,7 +353,6 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ✅ Counter for warmup executions by namespace and result (success/failure)
 ✅ Counter for total HTTP requests sent during warmup
 ✅ Histogram for warmup duration with default buckets
-✅ Histogram for request latency with custom buckets
 ✅ Gauge for pods pending warmup by namespace and node
 ✅ Controller instrumented to record metrics at warmup start/completion
 ✅ Metrics exposed on `:8080/metrics` endpoint

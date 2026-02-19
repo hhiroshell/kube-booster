@@ -13,7 +13,6 @@ kube-booster exports Prometheus metrics on the controller's metrics endpoint (de
 | `kube_booster_warmup_total` | Counter | `namespace`, `result` | Total warmup executions (result: success/failure) |
 | `kube_booster_warmup_requests_total` | Counter | `namespace` | Total HTTP requests sent during warmup |
 | `kube_booster_warmup_duration_seconds` | Histogram | `namespace` | Time from warmup start to completion |
-| `kube_booster_warmup_request_latency_seconds` | Gauge | `namespace`, `quantile` | Request latency percentiles from the most recent warmup |
 | `kube_booster_pods_pending_warmup` | Gauge | `namespace`, `node` | Pods currently waiting for warmup |
 
 ### Metric Details
@@ -36,14 +35,6 @@ A histogram tracking the total duration of warmup executions. Uses default Prome
 `.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10` seconds.
 
 This metric helps identify slow warmups that may delay pod readiness.
-
-#### kube_booster_warmup_request_latency_seconds
-
-A gauge tracking request latency percentiles from the most recent warmup execution. Labeled by:
-- `namespace`: The Kubernetes namespace of the pod
-- `quantile`: The percentile value (`0.5` for P50, `0.99` for P99)
-
-Values are set from Vegeta's pre-computed percentiles after each warmup and reflect the latest execution per namespace.
 
 #### kube_booster_pods_pending_warmup
 
@@ -135,22 +126,6 @@ histogram_quantile(0.95, sum(rate(kube_booster_warmup_duration_seconds_bucket[5m
 histogram_quantile(0.50, sum(rate(kube_booster_warmup_duration_seconds_bucket[5m])) by (le))
 ```
 
-### Request Latency Analysis
-
-```promql
-# P50 request latency
-kube_booster_warmup_request_latency_seconds{quantile="0.5"}
-
-# P99 request latency
-kube_booster_warmup_request_latency_seconds{quantile="0.99"}
-
-# P50 request latency by namespace
-kube_booster_warmup_request_latency_seconds{quantile="0.5"} by (namespace)
-
-# P99 request latency by namespace
-kube_booster_warmup_request_latency_seconds{quantile="0.99"} by (namespace)
-```
-
 ### Pending Pods
 
 ```promql
@@ -219,17 +194,6 @@ groups:
           summary: "Warmup backlog building up"
           description: "More than 10 pods are pending warmup"
 
-      # Alert on high request latency
-      - alert: KubeBoosterHighRequestLatency
-        expr: |
-          max(kube_booster_warmup_request_latency_seconds{quantile="0.99"})
-          > 5
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High warmup request latency"
-          description: "P99 request latency is over 5 seconds"
 ```
 
 ## Grafana Dashboard
@@ -238,7 +202,6 @@ A sample Grafana dashboard is provided at `config/samples/grafana-dashboard.json
 
 - Warmup success/failure rate over time
 - Warmup duration histogram and percentiles
-- Request latency percentiles
 - Pending pods by namespace and node
 - Warmup throughput
 
@@ -247,9 +210,8 @@ A sample Grafana dashboard is provided at `config/samples/grafana-dashboard.json
 1. **Warmup Success Rate**: Shows the percentage of successful warmups over time
 2. **Warmup Failures**: Displays failure count with namespace breakdown
 3. **Warmup Duration (P50/P95/P99)**: Tracks warmup latency trends
-4. **Request Latency (P50/P99)**: Shows individual request latencies
-5. **Pods Pending Warmup**: Real-time gauge of pods waiting for warmup
-6. **Warmup Throughput**: Rate of warmup completions per minute
+4. **Pods Pending Warmup**: Real-time gauge of pods waiting for warmup
+5. **Warmup Throughput**: Rate of warmup completions per minute
 
 ## Kubernetes Events
 
