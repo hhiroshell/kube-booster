@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/hhiroshell/kube-booster/pkg/controller"
+	_ "github.com/hhiroshell/kube-booster/pkg/metrics" // Register custom Prometheus metrics
 	"github.com/hhiroshell/kube-booster/pkg/warmup"
 	webhookpkg "github.com/hhiroshell/kube-booster/pkg/webhook"
 )

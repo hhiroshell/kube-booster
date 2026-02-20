@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/hhiroshell/kube-booster/pkg/metrics"
 	"github.com/hhiroshell/kube-booster/pkg/warmup"
 	"github.com/hhiroshell/kube-booster/pkg/webhook"
 )
@@ -91,6 +92,10 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	logger.Info("starting warmup execution", "pod", pod.Name, "namespace", pod.Namespace)
 	r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupStarted, "StartWarmup", "Starting warmup execution")
 
+	// Increment pending warmup gauge and ensure it's decremented when function returns
+	metrics.IncrementPodsPendingWarmup(pod.Namespace, pod.Spec.NodeName)
+	defer metrics.DecrementPodsPendingWarmup(pod.Namespace, pod.Spec.NodeName)
+
 	// Parse warmup configuration from pod annotations
 	config, err := warmup.ParseConfig(pod)
 	if err != nil {
@@ -135,6 +140,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			Message: "warmup skipped: no executor configured",
 		}
 		logger.Info("warmup skipped: no executor configured")
+	}
+
+	// Record warmup metrics (skip when no executor, as no actual warmup was performed)
+	if r.WarmupExecutor != nil {
+		metrics.RecordWarmupResult(pod.Namespace, result.Success, result.TotalDuration.Seconds())
+		metrics.RecordWarmupRequests(pod.Namespace, result.RequestsCompleted+result.RequestsFailed)
 	}
 
 	// Log and emit events for warmup result first
