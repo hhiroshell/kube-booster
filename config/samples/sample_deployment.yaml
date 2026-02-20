@@ -24,8 +24,8 @@ spec:
         # Optional: Number of warmup requests (default: 3)
         # kube-booster.io/warmup-requests: "5"
 
-        # Optional: Total warmup duration (default: 30s)
-        # kube-booster.io/warmup-duration: "30s"
+        # Optional: Maximum warmup timeout (default: 30s)
+        # kube-booster.io/warmup-timeout: "30s"
 
         # Optional: Port for warmup requests (auto-detected if single container with single port)
         # kube-booster.io/warmup-port: "8080"

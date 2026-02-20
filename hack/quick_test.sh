@@ -69,7 +69,7 @@ metadata:
     kube-booster.io/warmup: "enabled"
     kube-booster.io/warmup-endpoint: "/"
     kube-booster.io/warmup-requests: "3"
-    kube-booster.io/warmup-duration: "5s"
+    kube-booster.io/warmup-timeout: "5s"
     kube-booster.io/warmup-port: "80"
 spec:
   containers:

@@ -47,7 +47,7 @@ func TestParseConfig(t *testing.T) {
 			wantConfig: &Config{
 				Endpoint:     DefaultEndpointPath,
 				RequestCount: DefaultRequestCount,
-				Duration:     DefaultDuration,
+				Timeout:      DefaultTimeout,
 				Port:         8080,
 			},
 		},
@@ -77,7 +77,7 @@ func TestParseConfig(t *testing.T) {
 			wantConfig: &Config{
 				Endpoint:     DefaultEndpointPath,
 				RequestCount: DefaultRequestCount,
-				Duration:     DefaultDuration,
+				Timeout:      DefaultTimeout,
 				Port:         3000,
 			},
 		},
@@ -96,7 +96,7 @@ func TestParseConfig(t *testing.T) {
 			wantConfig: &Config{
 				Endpoint:     "/api/warmup",
 				RequestCount: DefaultRequestCount,
-				Duration:     DefaultDuration,
+				Timeout:      DefaultTimeout,
 				Port:         8080,
 			},
 		},
@@ -115,26 +115,26 @@ func TestParseConfig(t *testing.T) {
 			wantConfig: &Config{
 				Endpoint:     DefaultEndpointPath,
 				RequestCount: 10,
-				Duration:     DefaultDuration,
+				Timeout:      DefaultTimeout,
 				Port:         8080,
 			},
 		},
 		{
-			name: "custom duration",
+			name: "custom timeout",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
 					Annotations: map[string]string{
-						webhook.AnnotationWarmupDuration: "60s",
-						webhook.AnnotationWarmupPort:     "8080",
+						webhook.AnnotationWarmupTimeout: "60s",
+						webhook.AnnotationWarmupPort:    "8080",
 					},
 				},
 			},
 			wantConfig: &Config{
 				Endpoint:     DefaultEndpointPath,
 				RequestCount: DefaultRequestCount,
-				Duration:     60 * time.Second,
+				Timeout:      60 * time.Second,
 				Port:         8080,
 			},
 		},
@@ -147,7 +147,7 @@ func TestParseConfig(t *testing.T) {
 					Annotations: map[string]string{
 						webhook.AnnotationWarmupEndpoint: "/health",
 						webhook.AnnotationWarmupRequests: "5",
-						webhook.AnnotationWarmupDuration: "15s",
+						webhook.AnnotationWarmupTimeout:  "15s",
 						webhook.AnnotationWarmupPort:     "3000",
 					},
 				},
@@ -155,7 +155,7 @@ func TestParseConfig(t *testing.T) {
 			wantConfig: &Config{
 				Endpoint:     "/health",
 				RequestCount: 5,
-				Duration:     15 * time.Second,
+				Timeout:      15 * time.Second,
 				Port:         3000,
 			},
 		},
@@ -246,34 +246,34 @@ func TestParseConfig(t *testing.T) {
 			errContains: "warmup-requests must be at least 1",
 		},
 		{
-			name: "invalid duration",
+			name: "invalid timeout",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
 					Annotations: map[string]string{
-						webhook.AnnotationWarmupDuration: "invalid",
-						webhook.AnnotationWarmupPort:     "8080",
+						webhook.AnnotationWarmupTimeout: "invalid",
+						webhook.AnnotationWarmupPort:    "8080",
 					},
 				},
 			},
 			wantErr:     true,
-			errContains: "invalid warmup-duration value",
+			errContains: "invalid warmup-timeout value",
 		},
 		{
-			name: "duration too short",
+			name: "timeout too short",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
 					Annotations: map[string]string{
-						webhook.AnnotationWarmupDuration: "500ms",
-						webhook.AnnotationWarmupPort:     "8080",
+						webhook.AnnotationWarmupTimeout: "500ms",
+						webhook.AnnotationWarmupPort:    "8080",
 					},
 				},
 			},
 			wantErr:     true,
-			errContains: "warmup-duration must be at least 1s",
+			errContains: "warmup-timeout must be at least 1s",
 		},
 		{
 			name: "invalid port annotation",
@@ -331,8 +331,8 @@ func TestParseConfig(t *testing.T) {
 			if config.RequestCount != tt.wantConfig.RequestCount {
 				t.Errorf("RequestCount = %v, want %v", config.RequestCount, tt.wantConfig.RequestCount)
 			}
-			if config.Duration != tt.wantConfig.Duration {
-				t.Errorf("Duration = %v, want %v", config.Duration, tt.wantConfig.Duration)
+			if config.Timeout != tt.wantConfig.Timeout {
+				t.Errorf("Timeout = %v, want %v", config.Timeout, tt.wantConfig.Timeout)
 			}
 			if config.Port != tt.wantConfig.Port {
 				t.Errorf("Port = %v, want %v", config.Port, tt.wantConfig.Port)

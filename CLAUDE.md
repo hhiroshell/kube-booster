@@ -67,12 +67,12 @@ spec:
         # Configuration (optional, uses defaults if not specified)
         kube-booster.io/warmup-endpoint: "/warmup"    # HTTP endpoint path
         kube-booster.io/warmup-requests: "5"          # Number of requests
-        kube-booster.io/warmup-duration: "30s"        # Total duration
+        kube-booster.io/warmup-timeout: "30s"         # Maximum timeout
         kube-booster.io/warmup-port: "8080"           # Container port (auto-detected if single)
 ```
 
 **Defaults:**
-- Default duration: 30s
+- Default timeout: 30s
 - Default requests: 3
 - Default endpoint: `/`
 - Default port: Auto-detected from container spec (single container with single port)
@@ -138,7 +138,7 @@ The controller follows the standard Kubernetes controller pattern with readiness
 3. **Controller** watches pods with the injected readiness gate
 4. Controller waits for containers to be ready, then emits `WarmupStarted` event
 5. Controller increments `pods_pending_warmup` gauge and parses warmup config from annotations
-6. Controller sends HTTP warmup requests using Vegeta load testing library
+6. Controller sends HTTP warmup requests back-to-back using net/http (ASAP model)
 7. Controller decrements `pods_pending_warmup` gauge and records Prometheus metrics (duration, request count)
 8. Controller emits `WarmupCompleted` or `WarmupFailed` event with result details
 9. Controller updates pod condition `kube-booster.io/warmup-ready` to `True` when warmup completes (or on failure, fail-open)

@@ -234,8 +234,8 @@ kube-booster/
 │   ├── warmup/
 │   │   ├── config.go             # Configuration parsing
 │   │   ├── config_test.go
-│   │   ├── executor.go           # Vegeta executor implementation
-│   │   ├── executor_test.go
+│   │   ├── http_executor.go      # HTTP executor implementation (ASAP model)
+│   │   ├── http_executor_test.go
 │   │   └── result.go             # Warmup result structure
 │   └── webhook/
 │       ├── constants.go          # Shared constants
@@ -420,21 +420,22 @@ In this architecture, both webhook and controller run in a single deployment:
 - `ParseConfig(pod)` parses annotations into Config:
   - `kube-booster.io/warmup-endpoint` → Endpoint path (default: `/`)
   - `kube-booster.io/warmup-requests` → Request count (default: `3`)
-  - `kube-booster.io/warmup-duration` → Duration (default: `30s`)
+  - `kube-booster.io/warmup-timeout` → Maximum timeout (default: `30s`)
   - `kube-booster.io/warmup-port` → Port (auto-detected if possible)
 - Auto-detects port from container spec (single container, single port)
 - Validates numeric values and duration format
 - `BuildEndpointURL()` constructs full URL for requests
 
-**executor.go**
+**http_executor.go**
 - `Executor` interface for warmup implementations
-- `VegetaExecutor` uses Vegeta load testing library
-- Calculates request rate: `RequestCount / Duration`
-- Per-request timeout: 1s minimum, scales with rate
+- `HTTPExecutor` sends requests back-to-back using `net/http` (ASAP model)
+- `Config.Timeout` acts as maximum wall-clock cap
+- Per-request timeout: 10s via `http.Client.Timeout`
 - Adds custom headers:
   - `User-Agent: kube-booster/1.0`
   - `X-Warmup-Request: true`
 - Context-aware cancellation support
+- Computes latency percentiles (P50/P99) via sorted-slice approach
 
 **result.go**
 - `Result` struct tracks warmup outcome:
@@ -500,7 +501,7 @@ Check containers ready
     ↓
 Increment pending warmup gauge + emit WarmupStarted event
     ↓
-Execute warmup requests via Vegeta
+Execute warmup requests back-to-back via HTTPExecutor
     ↓
 Decrement pending warmup gauge + record metrics (result, duration, requests)
     ↓

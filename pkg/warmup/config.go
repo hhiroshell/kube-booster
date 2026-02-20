@@ -14,8 +14,8 @@ const (
 	// DefaultRequestCount is the default number of warmup requests to send
 	DefaultRequestCount = 3
 
-	// DefaultDuration is the default duration for warmup requests
-	DefaultDuration = 30 * time.Second
+	// DefaultTimeout is the default maximum timeout for warmup requests
+	DefaultTimeout = 30 * time.Second
 
 	// DefaultEndpointPath is the default endpoint path for warmup requests
 	DefaultEndpointPath = "/"
@@ -29,8 +29,8 @@ type Config struct {
 	// RequestCount is the number of warmup requests to send (from kube-booster.io/warmup-requests)
 	RequestCount int
 
-	// Duration is the total duration for all warmup requests (from kube-booster.io/warmup-duration)
-	Duration time.Duration
+	// Timeout is the maximum timeout for the warmup phase (from kube-booster.io/warmup-timeout)
+	Timeout time.Duration
 
 	// PodIP is the IP address of the pod (set by controller)
 	PodIP string
@@ -50,7 +50,7 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 	config := &Config{
 		Endpoint:     DefaultEndpointPath,
 		RequestCount: DefaultRequestCount,
-		Duration:     DefaultDuration,
+		Timeout:      DefaultTimeout,
 	}
 
 	if pod == nil {
@@ -77,16 +77,16 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 			config.RequestCount = reqCount
 		}
 
-		// Parse duration
-		if durationStr, ok := annotations[webhook.AnnotationWarmupDuration]; ok && durationStr != "" {
-			duration, err := time.ParseDuration(durationStr)
+		// Parse timeout
+		if timeoutStr, ok := annotations[webhook.AnnotationWarmupTimeout]; ok && timeoutStr != "" {
+			timeout, err := time.ParseDuration(timeoutStr)
 			if err != nil {
-				return config, fmt.Errorf("invalid warmup-duration value %q: %w", durationStr, err)
+				return config, fmt.Errorf("invalid warmup-timeout value %q: %w", timeoutStr, err)
 			}
-			if duration < time.Second {
-				return config, fmt.Errorf("warmup-duration must be at least 1s, got %v", duration)
+			if timeout < time.Second {
+				return config, fmt.Errorf("warmup-timeout must be at least 1s, got %v", timeout)
 			}
-			config.Duration = duration
+			config.Timeout = timeout
 		}
 
 		// Parse port from annotation
