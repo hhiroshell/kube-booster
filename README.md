@@ -15,7 +15,8 @@ Kube Booster helps reduce cold start issues and improves application readiness b
 - **Annotation-Based Configuration**: Simple opt-in via pod annotations
 - **Fail-Open Behavior**: Pods become ready even if warmup fails (with warning logs)
 - **Port Auto-Detection**: Automatically detects container port for single-port containers
-- **Metrics Logging**: Logs P50/P99 latencies and success rates after warmup
+- **Prometheus Metrics**: Exports warmup duration, request count, success/failure rates, and pending pod gauge
+- **Grafana Dashboard**: Sample dashboard for visualizing warmup performance and health
 
 ## 🔧 How It Works
 
@@ -145,6 +146,7 @@ kube-booster/
 ├── cmd/controller/     # Controller entry point
 ├── pkg/
 │   ├── controller/     # Pod reconciler implementation
+│   ├── metrics/        # Prometheus metrics definitions
 │   ├── warmup/         # Warmup execution (Vegeta)
 │   └── webhook/        # Mutating admission webhook
 ├── config/
@@ -159,6 +161,7 @@ kube-booster/
 
 - [Usage Guide](docs/USAGE.md) - Installation and configuration
 - [Development Guide](docs/DEVELOPMENT.md) - Building and contributing
+- [Observability Guide](docs/OBSERVABILITY.md) - Prometheus metrics, alerting, and Grafana dashboard
 - [Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md) - Technical details
 
 ## 🤝 Contributing
