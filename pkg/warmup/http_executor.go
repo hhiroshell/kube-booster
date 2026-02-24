@@ -80,9 +80,8 @@ func (e *HTTPExecutor) Execute(ctx context.Context, config *Config) *Result {
 
 		if err != nil {
 			failCount++
-			// If context was cancelled/timed out, record the error and break
+			// If context was cancelled/timed out, stop sending requests
 			if warmupCtx.Err() != nil {
-				result.Error = ctx.Err()
 				break
 			}
 			continue
@@ -105,14 +104,9 @@ func (e *HTTPExecutor) Execute(ctx context.Context, config *Config) *Result {
 
 	totalDuration := time.Since(start)
 
-	// If no requests were sent and context was cancelled, set the error
-	if successCount == 0 && failCount == 0 && warmupCtx.Err() != nil {
-		result.Error = ctx.Err()
-		result.Message = "warmup cancelled"
-		e.logger.V(1).Info("warmup cancelled",
-			"pod", config.PodName,
-			"reason", ctx.Err())
-		return result
+	// Record context error if warmup was cancelled or timed out
+	if warmupCtx.Err() != nil {
+		result.Error = warmupCtx.Err()
 	}
 
 	// Calculate percentiles
