@@ -137,8 +137,8 @@ spec:
 |------------|-------------|---------|
 | `kube-booster.io/warmup` | Enable/disable warmup (`enabled`/`disabled`) | `disabled` |
 | `kube-booster.io/warmup-endpoint` | HTTP endpoint path for warmup requests | `/` |
-| `kube-booster.io/warmup-requests` | Number of warmup requests to send | `3` |
-| `kube-booster.io/warmup-timeout` | Maximum timeout for warmup (e.g., `30s`, `1m`) | `30s` |
+| `kube-booster.io/warmup-requests` | Number of warmup requests to send (1-12000) | `3` |
+| `kube-booster.io/warmup-timeout` | Maximum timeout for warmup (1s-5m, e.g., `30s`, `1m`) | `30s` |
 | `kube-booster.io/warmup-port` | Container port for warmup requests | Auto-detected |
 
 ### Example: Complete Application

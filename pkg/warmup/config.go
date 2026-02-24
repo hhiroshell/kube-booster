@@ -14,8 +14,14 @@ const (
 	// DefaultRequestCount is the default number of warmup requests to send
 	DefaultRequestCount = 3
 
+	// MaxRequestCount is the maximum allowed warmup requests (aligned with JVM C2 JIT threshold)
+	MaxRequestCount = 12000
+
 	// DefaultTimeout is the default maximum timeout for warmup requests
 	DefaultTimeout = 30 * time.Second
+
+	// MaxTimeout is the maximum allowed warmup timeout
+	MaxTimeout = 5 * time.Minute
 
 	// DefaultEndpointPath is the default endpoint path for warmup requests
 	DefaultEndpointPath = "/"
@@ -74,6 +80,9 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 			if reqCount < 1 {
 				return config, fmt.Errorf("warmup-requests must be at least 1, got %d", reqCount)
 			}
+			if reqCount > MaxRequestCount {
+				return config, fmt.Errorf("warmup-requests must not exceed %d, got %d", MaxRequestCount, reqCount)
+			}
 			config.RequestCount = reqCount
 		}
 
@@ -85,6 +94,9 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 			}
 			if timeout < time.Second {
 				return config, fmt.Errorf("warmup-timeout must be at least 1s, got %v", timeout)
+			}
+			if timeout > MaxTimeout {
+				return config, fmt.Errorf("warmup-timeout must not exceed %v, got %v", MaxTimeout, timeout)
 			}
 			config.Timeout = timeout
 		}

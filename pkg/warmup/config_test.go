@@ -246,6 +246,21 @@ func TestParseConfig(t *testing.T) {
 			errContains: "warmup-requests must be at least 1",
 		},
 		{
+			name: "request count exceeds maximum",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupRequests: "15000",
+						webhook.AnnotationWarmupPort:     "8080",
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "warmup-requests must not exceed 12000",
+		},
+		{
 			name: "invalid timeout",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -274,6 +289,21 @@ func TestParseConfig(t *testing.T) {
 			},
 			wantErr:     true,
 			errContains: "warmup-timeout must be at least 1s",
+		},
+		{
+			name: "timeout exceeds maximum",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupTimeout: "10m",
+						webhook.AnnotationWarmupPort:    "8080",
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "warmup-timeout must not exceed 5m0s",
 		},
 		{
 			name: "invalid port annotation",
