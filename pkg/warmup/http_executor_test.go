@@ -267,8 +267,8 @@ func TestCalculatePercentiles(t *testing.T) {
 				90 * time.Millisecond,
 				100 * time.Millisecond,
 			},
-			wantP50: 60 * time.Millisecond,  // index 5 (10*50/100=5) → 60ms
-			wantP99: 100 * time.Millisecond, // index 9 (10*99/100=9)
+			wantP50: 50 * time.Millisecond,  // nearest-rank: index 4 (ceil(500/100)-1=4) → 50ms
+			wantP99: 100 * time.Millisecond, // nearest-rank: index 9 (ceil(990/100)-1=9)
 		},
 	}
 

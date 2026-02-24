@@ -143,8 +143,18 @@ func calculatePercentiles(latencies []time.Duration) (p50, p99 time.Duration) {
 		return 0, 0
 	}
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
-	p50 = latencies[n*50/100]
-	p99idx := n * 99 / 100
+
+	// Nearest-rank method: index = max(0, ceil(n*p/100) - 1)
+	p50idx := (n*50 + 99) / 100
+	if p50idx > 0 {
+		p50idx--
+	}
+	p50 = latencies[p50idx]
+
+	p99idx := (n*99 + 99) / 100
+	if p99idx > 0 {
+		p99idx--
+	}
 	if p99idx >= n {
 		p99idx = n - 1
 	}
