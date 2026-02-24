@@ -93,6 +93,9 @@ func (e *HTTPExecutor) Execute(ctx context.Context, config *Config) *Result {
 			e.logger.V(2).Info("failed to close response body", "error", err)
 		}
 
+		// Record latency for all completed HTTP round-trips regardless of status code.
+		// Even 4xx/5xx responses exercise the application's request handling path
+		// (class loading, cache warming, JIT compilation), which is the goal of warmup.
 		latencies = append(latencies, latency)
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
