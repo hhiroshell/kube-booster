@@ -10,8 +10,8 @@ const (
 	// AnnotationWarmupRequests is the annotation key to specify the number of warmup requests
 	AnnotationWarmupRequests = "kube-booster.io/warmup-requests"
 
-	// AnnotationWarmupDuration is the annotation key to specify the warmup duration
-	AnnotationWarmupDuration = "kube-booster.io/warmup-duration"
+	// AnnotationWarmupTimeout is the annotation key to specify the maximum warmup timeout
+	AnnotationWarmupTimeout = "kube-booster.io/warmup-timeout"
 
 	// AnnotationWarmupPort is the annotation key to specify the warmup port
 	AnnotationWarmupPort = "kube-booster.io/warmup-port"

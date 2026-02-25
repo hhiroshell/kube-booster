@@ -11,7 +11,7 @@ Kube Booster helps reduce cold start issues and improves application readiness b
 ## ✨ Features
 
 - **Mutating Webhook**: Automatically injects readiness gates for annotated pods
-- **HTTP Warmup Requests**: Sends configurable warmup requests using Vegeta load testing library
+- **HTTP Warmup Requests**: Sends configurable warmup requests back-to-back (ASAP model)
 - **Annotation-Based Configuration**: Simple opt-in via pod annotations
 - **Fail-Open Behavior**: Pods become ready even if warmup fails (with warning logs)
 - **Port Auto-Detection**: Automatically detects container port for single-port containers
@@ -71,7 +71,7 @@ spec:
         # Optional configuration
         kube-booster.io/warmup-endpoint: "/warmup"  # Default: /
         kube-booster.io/warmup-requests: "5"        # Default: 3
-        kube-booster.io/warmup-duration: "30s"      # Default: 30s
+        kube-booster.io/warmup-timeout: "30s"       # Default: 30s
         kube-booster.io/warmup-port: "8080"         # Auto-detected if single port
     spec:
       containers:
@@ -147,7 +147,7 @@ kube-booster/
 ├── pkg/
 │   ├── controller/     # Pod reconciler implementation
 │   ├── metrics/        # Prometheus metrics definitions
-│   ├── warmup/         # Warmup execution (Vegeta)
+│   ├── warmup/         # Warmup execution (HTTP, ASAP model)
 │   └── webhook/        # Mutating admission webhook
 ├── config/
 │   ├── rbac/           # RBAC configurations

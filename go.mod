@@ -5,7 +5,6 @@ go 1.25.6
 require (
 	github.com/go-logr/logr v1.4.3
 	github.com/prometheus/client_golang v1.23.2
-	github.com/tsenart/vegeta/v12 v12.13.0
 	go.uber.org/zap v1.27.1
 	k8s.io/api v0.35.1
 	k8s.io/apimachinery v0.35.1
@@ -29,7 +28,6 @@ require (
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/influxdata/tdigest v0.0.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
@@ -41,7 +39,6 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
-	github.com/rs/dnscache v0.0.0-20230804202142-fc85eb664529 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect

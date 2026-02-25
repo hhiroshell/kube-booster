@@ -11,7 +11,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func TestVegetaExecutor_Execute(t *testing.T) {
+func TestHTTPExecutor_Execute(t *testing.T) {
 	logger := ctrl.Log.WithName("test")
 
 	tests := []struct {
@@ -26,7 +26,7 @@ func TestVegetaExecutor_Execute(t *testing.T) {
 			config: &Config{
 				Endpoint:     "/warmup",
 				RequestCount: 3,
-				Duration:     5 * time.Second,
+				Timeout:      5 * time.Second,
 				PodName:      "test-pod",
 				PodNamespace: "default",
 			},
@@ -46,7 +46,7 @@ func TestVegetaExecutor_Execute(t *testing.T) {
 			config: &Config{
 				Endpoint:     "/warmup",
 				RequestCount: 3,
-				Duration:     5 * time.Second,
+				Timeout:      5 * time.Second,
 				PodName:      "test-pod",
 				PodNamespace: "default",
 			},
@@ -60,7 +60,7 @@ func TestVegetaExecutor_Execute(t *testing.T) {
 			config: &Config{
 				Endpoint:     "/warmup",
 				RequestCount: 3,
-				Duration:     5 * time.Second,
+				Timeout:      5 * time.Second,
 				PodIP:        "", // No IP set
 				PodName:      "test-pod",
 				PodNamespace: "default",
@@ -86,7 +86,7 @@ func TestVegetaExecutor_Execute(t *testing.T) {
 				}
 			}
 
-			executor := NewVegetaExecutor(logger)
+			executor := NewHTTPExecutor(logger)
 			result := executor.Execute(context.Background(), tt.config)
 
 			if tt.wantErrContain != "" {
@@ -112,7 +112,7 @@ func TestVegetaExecutor_Execute(t *testing.T) {
 	}
 }
 
-func TestVegetaExecutor_Execute_ContextCancellation(t *testing.T) {
+func TestHTTPExecutor_Execute_ContextCancellation(t *testing.T) {
 	logger := ctrl.Log.WithName("test")
 
 	// Create a slow server
@@ -127,14 +127,14 @@ func TestVegetaExecutor_Execute_ContextCancellation(t *testing.T) {
 	config := &Config{
 		Endpoint:     "/",
 		RequestCount: 10,
-		Duration:     30 * time.Second,
+		Timeout:      30 * time.Second,
 		PodIP:        parts[0],
 		Port:         parsePort(parts[1]),
 		PodName:      "test-pod",
 		PodNamespace: "default",
 	}
 
-	executor := NewVegetaExecutor(logger)
+	executor := NewHTTPExecutor(logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -149,12 +149,10 @@ func TestVegetaExecutor_Execute_ContextCancellation(t *testing.T) {
 	}
 }
 
-func TestVegetaExecutor_Execute_MetricsCollection(t *testing.T) {
+func TestHTTPExecutor_Execute_MetricsCollection(t *testing.T) {
 	logger := ctrl.Log.WithName("test")
 
-	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
 		time.Sleep(10 * time.Millisecond) // Small delay for latency measurement
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -165,14 +163,14 @@ func TestVegetaExecutor_Execute_MetricsCollection(t *testing.T) {
 	config := &Config{
 		Endpoint:     "/",
 		RequestCount: 5,
-		Duration:     10 * time.Second,
+		Timeout:      10 * time.Second,
 		PodIP:        parts[0],
 		Port:         parsePort(parts[1]),
 		PodName:      "test-pod",
 		PodNamespace: "default",
 	}
 
-	executor := NewVegetaExecutor(logger)
+	executor := NewHTTPExecutor(logger)
 	result := executor.Execute(context.Background(), config)
 
 	if !result.Success {
@@ -195,6 +193,57 @@ func TestVegetaExecutor_Execute_MetricsCollection(t *testing.T) {
 	// Message should be populated
 	if result.Message == "" {
 		t.Error("Execute() Message is empty")
+	}
+}
+
+func TestCalculatePercentiles(t *testing.T) {
+	tests := []struct {
+		name      string
+		latencies []time.Duration
+		wantP50   time.Duration
+		wantP99   time.Duration
+	}{
+		{
+			name:      "empty slice",
+			latencies: nil,
+			wantP50:   0,
+			wantP99:   0,
+		},
+		{
+			name:      "single element",
+			latencies: []time.Duration{100 * time.Millisecond},
+			wantP50:   100 * time.Millisecond,
+			wantP99:   100 * time.Millisecond,
+		},
+		{
+			name: "known values",
+			latencies: []time.Duration{
+				10 * time.Millisecond,
+				20 * time.Millisecond,
+				30 * time.Millisecond,
+				40 * time.Millisecond,
+				50 * time.Millisecond,
+				60 * time.Millisecond,
+				70 * time.Millisecond,
+				80 * time.Millisecond,
+				90 * time.Millisecond,
+				100 * time.Millisecond,
+			},
+			wantP50: 50 * time.Millisecond,  // nearest-rank: index 4 (ceil(500/100)-1=4) → 50ms
+			wantP99: 100 * time.Millisecond, // nearest-rank: index 9 (ceil(990/100)-1=9)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p50, p99 := calculatePercentiles(tt.latencies)
+			if p50 != tt.wantP50 {
+				t.Errorf("calculatePercentiles() p50 = %v, want %v", p50, tt.wantP50)
+			}
+			if p99 != tt.wantP99 {
+				t.Errorf("calculatePercentiles() p99 = %v, want %v", p99, tt.wantP99)
+			}
+		})
 	}
 }
 

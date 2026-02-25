@@ -8,7 +8,7 @@ kube-booster is a Kubernetes controller that ensures smooth application launches
 
 **Current Features**:
 - Mutating webhook injects readiness gates for annotated pods
-- Controller sends HTTP warmup requests using Vegeta before marking pods ready
+- Controller sends HTTP warmup requests back-to-back before marking pods ready
 - Fail-open behavior ensures pods become ready even if warmup fails
 - Kubernetes Events emitted for warmup lifecycle visibility via `kubectl describe pod`
 - Prometheus metrics exported for monitoring warmup performance and alerting
@@ -137,8 +137,8 @@ spec:
 |------------|-------------|---------|
 | `kube-booster.io/warmup` | Enable/disable warmup (`enabled`/`disabled`) | `disabled` |
 | `kube-booster.io/warmup-endpoint` | HTTP endpoint path for warmup requests | `/` |
-| `kube-booster.io/warmup-requests` | Number of warmup requests to send | `3` |
-| `kube-booster.io/warmup-duration` | Total duration for warmup (e.g., `30s`, `1m`) | `30s` |
+| `kube-booster.io/warmup-requests` | Number of warmup requests to send (1-12000) | `3` |
+| `kube-booster.io/warmup-timeout` | Maximum timeout for warmup (1s-5m, e.g., `30s`, `1m`) | `30s` |
 | `kube-booster.io/warmup-port` | Container port for warmup requests | Auto-detected |
 
 ### Example: Complete Application
@@ -206,8 +206,8 @@ spec:
         kube-booster.io/warmup-endpoint: "/warmup"
         # Send 10 warmup requests
         kube-booster.io/warmup-requests: "10"
-        # Spread requests over 60 seconds
-        kube-booster.io/warmup-duration: "60s"
+        # Maximum timeout for warmup (60 seconds)
+        kube-booster.io/warmup-timeout: "60s"
         # Use port 8080 (required for multi-port containers)
         kube-booster.io/warmup-port: "8080"
     spec:
@@ -223,7 +223,7 @@ spec:
 
 **Notes:**
 - **Port auto-detection**: If your container has exactly one port, kube-booster will automatically detect it. Specify `warmup-port` explicitly when containers have multiple ports.
-- **Request rate**: Requests are distributed evenly across the duration. For example, 10 requests over 60s = 1 request every 6 seconds.
+- **Request execution**: Requests are sent back-to-back as fast as possible (ASAP model). The `warmup-timeout` sets the maximum wall-clock time for the entire warmup phase. Warmup typically completes much faster than the timeout.
 - **Custom headers**: All warmup requests include `User-Agent: kube-booster/1.0` and `X-Warmup-Request: true` headers.
 
 ## Verification
@@ -323,7 +323,7 @@ This script verifies:
 └──────────────────────┬──────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  Controller executes warmup requests using Vegeta          │
+│  Controller executes warmup requests back-to-back          │
 │  → Emits WarmupStarted event                              │
 │  → Parses configuration from annotations                  │
 │  → Sends HTTP requests to pod endpoint                    │
@@ -520,9 +520,9 @@ If your pod has exactly one container with exactly one port defined, kube-booste
 
 ### How are warmup requests distributed?
 
-Requests are sent at a steady rate calculated as: `request_count / duration`. For example:
-- 3 requests over 30s = 1 request every 10 seconds
-- 10 requests over 60s = 1 request every 6 seconds
+Requests are sent back-to-back as fast as possible (ASAP model). The `warmup-timeout` annotation sets the maximum wall-clock time for the entire warmup phase. For example:
+- 3 requests with timeout 30s: completes in milliseconds (much faster than the timeout)
+- 10 requests with timeout 60s: completes as fast as the server can respond
 
 ### What metrics are logged during warmup?
 

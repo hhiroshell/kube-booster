@@ -121,7 +121,6 @@ k8s.io/apimachinery v0.35.0
 k8s.io/client-go v0.35.0
 sigs.k8s.io/controller-runtime v0.23.0
 go.uber.org/zap v1.27.0
-github.com/tsenart/vegeta/v12 v12.12.0
 ```
 
 Testing:
@@ -136,8 +135,8 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 **Files Created:**
 - `config.go` - Configuration parsing from pod annotations
 - `config_test.go` - Unit tests for config parsing
-- `executor.go` - Executor interface and Vegeta implementation
-- `executor_test.go` - Unit tests for executor
+- `http_executor.go` - Executor interface and HTTPExecutor implementation (ASAP model)
+- `http_executor_test.go` - Unit tests for executor
 - `result.go` - Result structure for warmup outcomes
 
 **Configuration (`config.go`):**
@@ -145,20 +144,21 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 - `ParseConfig(pod)` extracts settings from annotations:
   - `kube-booster.io/warmup-endpoint` → Endpoint path (default: `/`)
   - `kube-booster.io/warmup-requests` → Request count (default: `3`)
-  - `kube-booster.io/warmup-duration` → Total duration (default: `30s`)
+  - `kube-booster.io/warmup-timeout` → Maximum timeout (default: `30s`)
   - `kube-booster.io/warmup-port` → Container port (auto-detected if single container/port)
 - Validates numeric values and duration format
 - Auto-detects port from container spec when applicable
 
-**Executor (`executor.go`):**
+**Executor (`http_executor.go`):**
 - `Executor` interface defines `Execute(ctx, config)` method
-- `VegetaExecutor` implementation using Vegeta load testing library
+- `HTTPExecutor` implementation using `net/http` with back-to-back requests (ASAP model)
 - Features:
-  - Calculates request rate: `RequestCount / Duration`
-  - Per-request timeout: 1s-10s based on rate
+  - Requests fire back-to-back as fast as possible
+  - `Config.Timeout` acts as maximum wall-clock cap
+  - Per-request timeout: 10s via `http.Client.Timeout`
   - Custom headers: `User-Agent: kube-booster/1.0`, `X-Warmup-Request: true`
   - Context-aware cancellation support
-  - Graceful handling of slow responses
+  - Latency percentiles (P50/P99) via sorted-slice approach
 
 **Result (`result.go`):**
 - `Result` struct tracks warmup outcome:
@@ -267,7 +267,7 @@ User deploys pod with annotation
                       └─> Waits for pod Running + containers ready
                           └─> Emits WarmupStarted event
                               └─> Parses warmup config from annotations
-                                  └─> Executes warmup requests via Vegeta
+                                  └─> Executes warmup requests via HTTPExecutor
                                       └─> Emits WarmupCompleted/WarmupFailed event
                                           └─> Sets condition kube-booster.io/warmup-ready=True
                                               └─> Emits ConditionUpdated event
@@ -297,7 +297,7 @@ User deploys pod with annotation
 6. Verify ContainersReady condition is True
 7. Increment pending warmup gauge, emit `WarmupStarted` event
 8. Parse warmup config from annotations
-9. Execute warmup requests via Vegeta
+9. Execute warmup requests via HTTPExecutor
 10. Decrement pending warmup gauge, record metrics (result, duration, requests)
 11. Emit `WarmupCompleted` or `WarmupFailed` event
 12. Set warmup condition to True and update pod status
@@ -328,8 +328,8 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ## Success Criteria - HTTP Warmup
 
 ✅ Controller parses warmup configuration from annotations
-✅ HTTP warmup requests sent using Vegeta load testing library
-✅ Request rate distributed evenly across configured duration
+✅ HTTP warmup requests sent back-to-back using net/http (ASAP model)
+✅ Requests fire as fast as possible with configurable timeout cap
 ✅ Custom headers identify warmup requests
 ✅ Fail-open behavior: pods ready even if warmup fails
 ✅ Warmup metrics logged (latencies, success rate)
@@ -440,7 +440,7 @@ Future enhancements:
 The implementation is complete and ready for testing. The system provides:
 
 ✓ End-to-end warmup functionality via annotations
-✓ HTTP warmup requests using Vegeta load testing library
+✓ HTTP warmup requests using net/http (ASAP model)
 ✓ Fail-open behavior ensuring pod availability
 ✓ Kubernetes Events for warmup lifecycle visibility
 ✓ Prometheus metrics for monitoring and alerting

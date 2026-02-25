@@ -120,7 +120,7 @@ func main() {
 	}
 
 	// Create warmup executor
-	warmupExecutor := warmup.NewVegetaExecutor(ctrl.Log.WithName("warmup"))
+	warmupExecutor := warmup.NewHTTPExecutor(ctrl.Log.WithName("warmup"))
 
 	// Setup pod controller (only if enabled)
 	if enableController {
