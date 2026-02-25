@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -142,7 +142,7 @@ func calculatePercentiles(latencies []time.Duration) (p50, p99 time.Duration) {
 	if n == 0 {
 		return 0, 0
 	}
-	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+	slices.Sort(latencies)
 
 	// Nearest-rank method: index = max(0, ceil(n*p/100) - 1)
 	p50idx := (n*50 + 99) / 100
