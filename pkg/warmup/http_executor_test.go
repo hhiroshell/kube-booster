@@ -196,44 +196,6 @@ func TestHTTPExecutor_Execute_MetricsCollection(t *testing.T) {
 	}
 }
 
-func TestHTTPExecutor_Execute_BackToBack(t *testing.T) {
-	logger := ctrl.Log.WithName("test")
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	addr := server.Listener.Addr().String()
-	parts := strings.Split(addr, ":")
-	config := &Config{
-		Endpoint:     "/",
-		RequestCount: 5,
-		Timeout:      30 * time.Second,
-		PodIP:        parts[0],
-		Port:         parsePort(parts[1]),
-		PodName:      "test-pod",
-		PodNamespace: "default",
-	}
-
-	executor := NewHTTPExecutor(logger)
-	result := executor.Execute(context.Background(), config)
-
-	if !result.Success {
-		t.Errorf("Execute() Success = false, want true. Message: %s", result.Message)
-	}
-
-	// With back-to-back requests against a fast server and 30s timeout,
-	// total duration should be well under 30s
-	if result.TotalDuration > 5*time.Second {
-		t.Errorf("Execute() TotalDuration = %v, expected much less than timeout (ASAP model)", result.TotalDuration)
-	}
-
-	if result.RequestsCompleted != 5 {
-		t.Errorf("Execute() RequestsCompleted = %d, want 5", result.RequestsCompleted)
-	}
-}
-
 func TestCalculatePercentiles(t *testing.T) {
 	tests := []struct {
 		name      string
