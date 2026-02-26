@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/sync/semaphore"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,6 +47,8 @@ func main() {
 	var enableWebhook bool
 	var enableController bool
 	var nodeName string
+	var maxConcurrentWarmups int
+	var maxWarmupRPS float64
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -56,6 +59,8 @@ func main() {
 	flag.BoolVar(&enableWebhook, "enable-webhook", true, "Enable webhook server")
 	flag.BoolVar(&enableController, "enable-controller", true, "Enable pod controller")
 	flag.StringVar(&nodeName, "node-name", "", "Node name for node-local controller mode (enables node filtering)")
+	flag.IntVar(&maxConcurrentWarmups, "max-concurrent-warmups", 10, "Maximum concurrent warmup executions per controller instance (0 = unlimited)")
+	flag.Float64Var(&maxWarmupRPS, "max-warmup-rps", 0, "Maximum aggregate warmup HTTP request rate per controller instance in requests per second (0 = unlimited)")
 
 	opts := zap.Options{
 		Development: true,
@@ -83,6 +88,10 @@ func main() {
 		"nodeName", nodeName,
 		"webhook-port", webhookPort,
 		"metrics-addr", metricsAddr,
+	)
+	setupLog.Info("concurrency config",
+		"maxConcurrentWarmups", maxConcurrentWarmups,
+		"maxWarmupRPS", maxWarmupRPS,
 	)
 
 	// Build manager options
@@ -119,16 +128,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create rate limiter (nil if maxWarmupRPS <= 0)
+	rateLimiter := warmup.NewRequestRateLimiter(maxWarmupRPS)
+
 	// Create warmup executor
-	warmupExecutor := warmup.NewHTTPExecutor(ctrl.Log.WithName("warmup"))
+	warmupExecutor := warmup.NewHTTPExecutor(ctrl.Log.WithName("warmup"),
+		warmup.WithRateLimiter(rateLimiter))
+
+	// Create semaphore (nil if maxConcurrentWarmups <= 0, meaning unlimited)
+	var warmupSemaphore *semaphore.Weighted
+	if maxConcurrentWarmups > 0 {
+		warmupSemaphore = semaphore.NewWeighted(int64(maxConcurrentWarmups))
+	}
 
 	// Setup pod controller (only if enabled)
 	if enableController {
 		if err = (&controller.PodReconciler{
-			Client:         mgr.GetClient(),
-			Scheme:         mgr.GetScheme(),
-			WarmupExecutor: warmupExecutor,
-			Recorder:       mgr.GetEventRecorder("kube-booster-controller"),
+			Client:          mgr.GetClient(),
+			Scheme:          mgr.GetScheme(),
+			WarmupExecutor:  warmupExecutor,
+			Recorder:        mgr.GetEventRecorder("kube-booster-controller"),
+			WarmupSemaphore: warmupSemaphore,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "Pod")
 			os.Exit(1)

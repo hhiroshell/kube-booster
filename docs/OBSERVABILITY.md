@@ -14,6 +14,7 @@ kube-booster exports Prometheus metrics on the controller's metrics endpoint (de
 | `kube_booster_warmup_requests_total` | Counter | `namespace` | Total HTTP requests sent during warmup |
 | `kube_booster_warmup_duration_seconds` | Histogram | `namespace` | Time from warmup start to completion |
 | `kube_booster_pods_pending_warmup` | Gauge | `namespace`, `node` | Pods currently waiting for warmup |
+| `kube_booster_warmup_queue_wait_seconds` | Histogram | `namespace` | Time pods wait for the warmup semaphore before execution begins |
 
 ### Metric Details
 
@@ -39,6 +40,12 @@ This metric helps identify slow warmups that may delay pod readiness.
 #### kube_booster_pods_pending_warmup
 
 A gauge showing the current number of pods waiting for warmup completion. Useful for capacity planning and identifying warmup bottlenecks.
+
+#### kube_booster_warmup_queue_wait_seconds
+
+A histogram tracking the time each pod spends waiting to acquire the warmup semaphore before execution begins. Only recorded when `--max-concurrent-warmups` is greater than 0. Uses default Prometheus buckets: `.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10` seconds.
+
+High values indicate that the concurrency limit (`--max-concurrent-warmups`) is a bottleneck and may need to be increased.
 
 ## Prometheus Configuration
 
@@ -149,6 +156,21 @@ sum(rate(kube_booster_warmup_total[5m])) * 60
 sum(rate(kube_booster_warmup_requests_total[5m])) * 60
 ```
 
+### Semaphore Queue Wait
+
+```promql
+# P95 queue wait time across all namespaces
+histogram_quantile(0.95, sum(rate(kube_booster_warmup_queue_wait_seconds_bucket[5m])) by (le))
+
+# P95 queue wait by namespace
+histogram_quantile(0.95, sum(rate(kube_booster_warmup_queue_wait_seconds_bucket[5m])) by (le, namespace))
+
+# Average queue wait time
+sum(rate(kube_booster_warmup_queue_wait_seconds_sum[5m]))
+/
+sum(rate(kube_booster_warmup_queue_wait_seconds_count[5m]))
+```
+
 ## Alerting Rules
 
 Example Prometheus alerting rules for kube-booster:
@@ -194,6 +216,18 @@ groups:
           summary: "Warmup backlog building up"
           description: "More than 10 pods are pending warmup"
 
+      # Alert on long semaphore queue wait (concurrency limit may be too low)
+      - alert: KubeBoosterHighSemaphoreWaitTime
+        expr: |
+          histogram_quantile(0.95, sum(rate(kube_booster_warmup_queue_wait_seconds_bucket[5m])) by (le))
+          > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High warmup semaphore wait time"
+          description: "P95 wait time for the warmup semaphore exceeds 10 seconds — consider increasing --max-concurrent-warmups"
+
 ```
 
 ## Grafana Dashboard
@@ -212,6 +246,7 @@ A sample Grafana dashboard is provided at `config/samples/grafana-dashboard.json
 3. **Warmup Duration (P50/P95/P99)**: Tracks warmup latency trends
 4. **Pods Pending Warmup**: Real-time gauge of pods waiting for warmup
 5. **Warmup Throughput**: Rate of warmup completions per minute
+6. **Semaphore Queue Wait (P95)**: Tracks how long pods wait for the concurrency semaphore — high values suggest `--max-concurrent-warmups` should be increased
 
 ## Kubernetes Events
 

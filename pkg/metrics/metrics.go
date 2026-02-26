@@ -42,6 +42,16 @@ var (
 		},
 		[]string{"namespace", "node"},
 	)
+
+	// WarmupQueueWaitSeconds is a histogram tracking time pods wait for the warmup semaphore
+	WarmupQueueWaitSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "kube_booster_warmup_queue_wait_seconds",
+			Help:    "Time pods wait for the warmup semaphore before execution begins",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"namespace"},
+	)
 )
 
 func init() {
@@ -50,6 +60,7 @@ func init() {
 		WarmupRequestsTotal,
 		WarmupDurationSeconds,
 		PodsPendingWarmup,
+		WarmupQueueWaitSeconds,
 	)
 }
 
@@ -82,4 +93,9 @@ func DecrementPodsPendingWarmup(namespace, node string) {
 // Exported for use in tests to set up initial gauge values.
 func SetPodsPendingWarmup(namespace, node string, count float64) {
 	PodsPendingWarmup.WithLabelValues(namespace, node).Set(count)
+}
+
+// RecordWarmupQueueWait records the time a pod waited for the warmup semaphore.
+func RecordWarmupQueueWait(namespace string, seconds float64) {
+	WarmupQueueWaitSeconds.WithLabelValues(namespace).Observe(seconds)
 }

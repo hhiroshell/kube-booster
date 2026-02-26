@@ -226,6 +226,28 @@ spec:
 - **Request execution**: Requests are sent back-to-back as fast as possible (ASAP model). The `warmup-timeout` sets the maximum wall-clock time for the entire warmup phase. Warmup typically completes much faster than the timeout.
 - **Custom headers**: All warmup requests include `User-Agent: kube-booster/1.0` and `X-Warmup-Request: true` headers.
 
+### Controller Flags
+
+The controller binary accepts the following flags for tuning concurrency and rate limiting:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--max-concurrent-warmups` | `10` | Maximum concurrent warmup executions per controller instance. `0` disables the limit (unlimited). |
+| `--max-warmup-rps` | `0` | Maximum aggregate warmup HTTP request rate (requests per second) across all concurrent warmups. `0` disables rate limiting (unlimited). |
+
+These flags are set in the DaemonSet spec for the controller. For example, to allow 20 concurrent warmups and cap the aggregate HTTP request rate at 100 RPS:
+
+```yaml
+args:
+  - --max-concurrent-warmups=20
+  - --max-warmup-rps=100
+```
+
+**When to tune these values:**
+- **Large-scale rollouts** (many pods starting simultaneously): lower `--max-concurrent-warmups` to prevent overwhelming the controller or target applications.
+- **Rate-sensitive applications**: use `--max-warmup-rps` to smooth out the warmup HTTP traffic across concurrent executions.
+- The semaphore is per-controller-instance (one per node in DaemonSet mode), so effective limits scale with node count.
+
 ## Verification
 
 ### Check Readiness Gate Injection

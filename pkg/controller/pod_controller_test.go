@@ -3,8 +3,11 @@ package controller
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"golang.org/x/sync/semaphore"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -614,6 +617,166 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 
 func hasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+// slowMockExecutor blocks until released, then returns success.
+type slowMockExecutor struct {
+	startedOnce sync.Once
+	startedCh   chan struct{} // closed when Execute begins (first call only)
+	blockCh     chan struct{} // close to unblock Execute
+}
+
+func newSlowMockExecutor() *slowMockExecutor {
+	return &slowMockExecutor{
+		startedCh: make(chan struct{}),
+		blockCh:   make(chan struct{}),
+	}
+}
+
+func (e *slowMockExecutor) Execute(ctx context.Context, config *warmup.Config) *warmup.Result {
+	e.startedOnce.Do(func() { close(e.startedCh) })
+	select {
+	case <-e.blockCh:
+	case <-ctx.Done():
+	}
+	return &warmup.Result{Success: true, RequestsCompleted: 1, Message: "slow mock"}
+}
+
+func makePodForSemaphoreTest(name string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+			Annotations: map[string]string{
+				webhook.AnnotationWarmupEnabled: "enabled",
+				webhook.AnnotationWarmupPort:    "8080",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "app", Image: "nginx"},
+			},
+			ReadinessGates: []corev1.PodReadinessGate{
+				{ConditionType: corev1.PodConditionType(webhook.ReadinessGateName)},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			PodIP: "10.0.0.1",
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.ContainersReady, Status: corev1.ConditionTrue},
+			},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "app", Ready: true},
+			},
+		},
+	}
+}
+
+func TestPodReconciler_Semaphore_SerializesExecution(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme) //nolint:errcheck
+
+	pod1 := makePodForSemaphoreTest("pod-1")
+	pod2 := makePodForSemaphoreTest("pod-2")
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(pod1, pod2).
+		WithStatusSubresource(pod1, pod2).
+		Build()
+
+	slowExec := newSlowMockExecutor()
+
+	reconciler := &PodReconciler{
+		Client:          fakeClient,
+		Scheme:          scheme,
+		WarmupExecutor:  slowExec,
+		Recorder:        events.NewFakeRecorder(100),
+		WarmupSemaphore: semaphore.NewWeighted(1),
+	}
+
+	var wg sync.WaitGroup
+	results := make([]ctrl.Result, 2)
+	errs := make([]error, 2)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		results[0], errs[0] = reconciler.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "pod-1", Namespace: "default"},
+		})
+	}()
+
+	// Wait until the first reconcile has acquired the semaphore and started executing
+	select {
+	case <-slowExec.startedCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first reconcile to start")
+	}
+
+	// Start second reconcile concurrently; it should queue behind the semaphore
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Use a context with timeout to prevent the test from hanging
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		results[1], errs[1] = reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "pod-2", Namespace: "default"},
+		})
+	}()
+
+	// Unblock the first executor so both can complete
+	close(slowExec.blockCh)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("reconcile[%d] error = %v", i, err)
+		}
+	}
+}
+
+func TestPodReconciler_Semaphore_ContextCancelled(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme) //nolint:errcheck
+
+	pod := makePodForSemaphoreTest("pod-1")
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(pod).
+		WithStatusSubresource(pod).
+		Build()
+
+	// Fully acquire the semaphore externally so Reconcile has to wait
+	sem := semaphore.NewWeighted(1)
+	if err := sem.Acquire(context.Background(), 1); err != nil {
+		t.Fatalf("failed to pre-acquire semaphore: %v", err)
+	}
+
+	reconciler := &PodReconciler{
+		Client:          fakeClient,
+		Scheme:          scheme,
+		WarmupExecutor:  &warmup.MockExecutor{Result: &warmup.Result{Success: true}},
+		Recorder:        events.NewFakeRecorder(100),
+		WarmupSemaphore: sem,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "pod-1", Namespace: "default"},
+	})
+
+	if err != nil {
+		t.Errorf("Reconcile() error = %v, want nil", err)
+	}
+	if result.RequeueAfter != 5*time.Second {
+		t.Errorf("Reconcile() RequeueAfter = %v, want 5s", result.RequeueAfter)
+	}
 }
 
 func TestPodReconciler_EventRecording(t *testing.T) {
