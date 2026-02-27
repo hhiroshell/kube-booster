@@ -82,7 +82,11 @@ func (e *HTTPExecutor) Execute(ctx context.Context, config *Config) *Result {
 		}
 
 		if err := e.rateLimiter.Wait(warmupCtx); err != nil {
-			break // context cancelled or deadline exceeded
+			// Context cancelled or deadline exceeded before token was available.
+			// Count remaining un-attempted requests as failed so the result
+			// message and fail-open decision reflect the full picture.
+			failCount += config.RequestCount - successCount - failCount
+			break
 		}
 
 		reqStart := time.Now()
