@@ -236,9 +236,10 @@ else
     echo "   ⚠ Semaphore: no queue wait found in WarmupStarted message (semaphore may be disabled)"
 fi
 
-# Rate limiter check: parse duration from WarmupCompleted event message and verify >= 2.0s
+# Rate limiter check: parse duration from WarmupCompleted event message and verify >= 1.9s
 # Message format: "warmup completed: 200/200 requests succeeded (100.0%), duration=2.1s, P50=..., P99=..."
-# With default 100 RPS and 200 requests, minimum expected duration is 200/100 = 2.0s
+# With default 100 RPS and 200 requests, the token bucket grants the first request immediately,
+# so the minimum duration is 199 intervals x 10ms = 1.99s. Threshold is 1.9s to accommodate this.
 RL_COMPLETED_MSG=$(kubectl get events \
     --field-selector involvedObject.name=${TEST_POD}-ratelimit,reason=WarmupCompleted \
     -o jsonpath='{.items[0].message}' 2>/dev/null || true)
@@ -252,11 +253,11 @@ if [ -n "$RL_DURATION" ]; then
         /m/          { n=split($0,a,"m"); gsub(/s/,"",a[2]); printf "%.3f", a[1]*60+(a[2]+0); next }
         { print 0 }
     ')
-    IS_RATE_LIMITED=$(awk -v d="$DURATION_S" 'BEGIN { print (d >= 2.0) ? "1" : "0" }')
+    IS_RATE_LIMITED=$(awk -v d="$DURATION_S" 'BEGIN { print (d >= 1.9) ? "1" : "0" }')
     if [ "$IS_RATE_LIMITED" = "1" ]; then
-        echo "   ✓ Rate limiting: WarmupCompleted shows duration=${RL_DURATION} ≥ 2.0s (200 req @ 100 RPS)"
+        echo "   ✓ Rate limiting: WarmupCompleted shows duration=${RL_DURATION} ≥ 1.9s (200 req @ 100 RPS)"
     else
-        echo "   ⚠ Rate limiting: WarmupCompleted shows duration=${RL_DURATION} < 2.0s (may not be rate-limited)"
+        echo "   ⚠ Rate limiting: WarmupCompleted shows duration=${RL_DURATION} < 1.9s (may not be rate-limited)"
     fi
 else
     echo "   ⚠ Rate limiting: WarmupCompleted event not found or duration missing"
