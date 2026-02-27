@@ -51,7 +51,7 @@ fi
 # Clean up any previous test pods
 echo ""
 echo "2. Cleaning up previous test pods..."
-kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup --ignore-not-found=true --wait=false &> /dev/null || true
+kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup ${TEST_POD}-ratelimit --ignore-not-found=true --wait=false &> /dev/null || true
 sleep 2
 
 # Test webhook injection with warmup-enabled pod
@@ -149,10 +149,17 @@ echo ""
 echo "8. Verifying Kubernetes Events..."
 EVENTS=$(kubectl get events --field-selector involvedObject.name=${TEST_POD} -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null || true)
 
+WARMUP_QUEUED=$(echo "$EVENTS" | grep -o "WarmupQueued" || true)
 WARMUP_STARTED=$(echo "$EVENTS" | grep -o "WarmupStarted" || true)
 WARMUP_COMPLETED=$(echo "$EVENTS" | grep -o "WarmupCompleted" || true)
 WARMUP_FAILED=$(echo "$EVENTS" | grep -o "WarmupFailed" || true)
 CONDITION_UPDATED=$(echo "$EVENTS" | grep -o "ConditionUpdated" || true)
+
+if [ -n "$WARMUP_QUEUED" ]; then
+    echo "   ✓ WarmupQueued event found (semaphore concurrency control active)"
+else
+    echo "   ⚠ WarmupQueued event not found (expected when --max-concurrent-warmups > 0)"
+fi
 
 if [ -n "$WARMUP_STARTED" ]; then
     echo "   ✓ WarmupStarted event found"
@@ -181,9 +188,93 @@ kubectl get events --field-selector involvedObject.name=${TEST_POD},source=kube-
     echo "     $line"
 done || echo "     (no events found)"
 
+# Test concurrency control and rate limiting
+echo ""
+echo "9. Testing concurrency control and rate limiting..."
+echo "   Creating test pod with 200 warmup requests (200 req @ default 100 RPS = ≥2s)..."
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${TEST_POD}-ratelimit
+  namespace: ${NAMESPACE}
+  annotations:
+    kube-booster.io/warmup: "enabled"
+    kube-booster.io/warmup-endpoint: "/"
+    kube-booster.io/warmup-requests: "200"
+    kube-booster.io/warmup-timeout: "120s"
+    kube-booster.io/warmup-port: "80"
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    ports:
+    - containerPort: 80
+EOF
+
+kubectl wait --for=condition=ContainersReady pod/${TEST_POD}-ratelimit --timeout=60s || true
+
+echo "   Waiting for warmup to complete..."
+for i in $(seq 1 60); do
+    RL_EVENTS=$(kubectl get events --field-selector involvedObject.name=${TEST_POD}-ratelimit \
+        -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null || true)
+    if echo "$RL_EVENTS" | grep -q "WarmupCompleted\|WarmupFailed"; then
+        break
+    fi
+    sleep 1
+done
+
+# Semaphore check: WarmupQueued event must be present
+RL_QUEUED=$(kubectl get events --field-selector involvedObject.name=${TEST_POD}-ratelimit \
+    -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null | grep -o "WarmupQueued" || true)
+if [ -n "$RL_QUEUED" ]; then
+    echo "   ✓ Semaphore: WarmupQueued event emitted (--max-concurrent-warmups active)"
+else
+    echo "   ⚠ Semaphore: WarmupQueued event not found"
+fi
+
+# Rate limiter check: verify via controller Prometheus metrics
+RL_POD_NODE=$(kubectl get pod ${TEST_POD}-ratelimit -o jsonpath='{.spec.nodeName}')
+RL_CONTROLLER_POD=$(kubectl get pods -n ${CONTROLLER_NAMESPACE} -l app.kubernetes.io/component=controller \
+    --field-selector spec.nodeName=${RL_POD_NODE} -o jsonpath='{.items[0].metadata.name}')
+
+kubectl port-forward -n ${CONTROLLER_NAMESPACE} ${RL_CONTROLLER_POD} 19090:8080 &>/dev/null &
+PF_PID=$!
+sleep 2
+
+METRICS=$(curl -s http://localhost:19090/metrics 2>/dev/null || true)
+kill ${PF_PID} 2>/dev/null || true
+
+if [ -n "$METRICS" ]; then
+    QUEUE_WAIT_COUNT=$(echo "$METRICS" | grep '^kube_booster_warmup_queue_wait_seconds_count{' | awk '{print $2}' | head -1)
+    DURATION_SUM=$(echo "$METRICS" | grep '^kube_booster_warmup_duration_seconds_sum{' | awk '{print $2}' | head -1)
+
+    if [ -n "$QUEUE_WAIT_COUNT" ]; then
+        echo "   ✓ Semaphore: queue wait metric recorded (count=${QUEUE_WAIT_COUNT})"
+    else
+        echo "   ⚠ Semaphore: queue wait metric not found in Prometheus output"
+    fi
+
+    if [ -n "$DURATION_SUM" ]; then
+        # 200 requests at default 100 RPS takes ≥ 2.0s; verify cumulative duration reflects this
+        IS_RATE_LIMITED=$(awk -v d="$DURATION_SUM" 'BEGIN { print (d >= 2.0) ? "1" : "0" }')
+        if [ "$IS_RATE_LIMITED" = "1" ]; then
+            echo "   ✓ Rate limiting: warmup duration ${DURATION_SUM}s ≥ 2.0s (200 req @ 100 RPS default)"
+        else
+            echo "   ⚠ Rate limiting: warmup duration ${DURATION_SUM}s < 2.0s (may not be rate-limited)"
+        fi
+    else
+        echo "   ⚠ Rate limiting: warmup duration metric not found"
+    fi
+else
+    echo "   ⚠ Could not access controller metrics endpoint (skipping rate limiter check)"
+fi
+
+kubectl delete pod ${TEST_POD}-ratelimit --ignore-not-found=true --wait=false &>/dev/null || true
+
 # Test without annotation
 echo ""
-echo "9. Testing pod without annotation..."
+echo "10. Testing pod without annotation..."
 kubectl run ${TEST_POD}-no-warmup --image=nginx:1.25 --restart=Never
 
 sleep 2
@@ -199,8 +290,8 @@ fi
 
 # Cleanup
 echo ""
-echo "10. Cleaning up test pods..."
-kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup --ignore-not-found=true
+echo "11. Cleaning up test pods..."
+kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup ${TEST_POD}-ratelimit --ignore-not-found=true
 echo "   ✓ Cleanup complete"
 
 echo ""
@@ -215,7 +306,9 @@ echo "  - Readiness gate injection via mutating webhook"
 echo "  - Warmup configuration via annotations"
 echo "  - HTTP warmup request execution"
 echo "  - Pod condition update after warmup"
-echo "  - Kubernetes Events for warmup lifecycle"
+echo "  - Kubernetes Events for warmup lifecycle (WarmupQueued, WarmupStarted, WarmupCompleted/Failed, ConditionUpdated)"
+echo "  - Semaphore concurrency control (--max-concurrent-warmups)"
+echo "  - RPS rate limiting (--max-warmup-rps)"
 echo ""
 echo "Next steps:"
 echo "  - Deploy sample application: make deploy-sample"
