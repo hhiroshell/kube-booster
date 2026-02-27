@@ -22,6 +22,7 @@ import (
 
 // Event reason constants
 const (
+	ReasonWarmupQueued     = "WarmupQueued"
 	ReasonWarmupStarted    = "WarmupStarted"
 	ReasonWarmupCompleted  = "WarmupCompleted"
 	ReasonWarmupFailed     = "WarmupFailed"
@@ -94,9 +95,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	// Acquire semaphore if concurrency limiting is enabled
 	if r.WarmupSemaphore != nil {
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupQueued, "QueueWarmup",
+			"Pod queued for warmup execution (waiting for concurrency slot)")
 		waitStart := time.Now()
 		if err := r.WarmupSemaphore.Acquire(ctx, 1); err != nil {
-			// Context cancelled while waiting; requeue so we retry once context is fresh
+			// Context cancelled while waiting; record partial wait before requeuing
+			metrics.RecordWarmupQueueWait(pod.Namespace, time.Since(waitStart).Seconds())
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 		defer r.WarmupSemaphore.Release(1)
