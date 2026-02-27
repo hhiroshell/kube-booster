@@ -505,15 +505,9 @@ PodReconciler.Reconcile()
     ↓
 Check containers ready
     ↓
-Emit WarmupQueued event + acquire semaphore slot (if --max-concurrent-warmups > 0)
+Acquire semaphore slot (if --max-concurrent-warmups > 0)
     ↓
-Increment pending warmup gauge + emit WarmupStarted event
-    ↓
-Execute warmup requests back-to-back via HTTPExecutor (rate-limited if --max-warmup-rps > 0)
-    ↓
-Decrement pending warmup gauge + record metrics (result, duration, requests)
-    ↓
-Emit WarmupCompleted/WarmupFailed event
+Execute warmup requests via HTTPExecutor (rate-limited if --max-warmup-rps > 0)
     ↓
 Update pod condition
     ↓
