@@ -94,7 +94,6 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// All conditions met, execute warmup
 
 	// Acquire semaphore if concurrency limiting is enabled
-	var queueWait time.Duration
 	if r.WarmupSemaphore != nil {
 		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupQueued, "QueueWarmup",
 			"Pod queued for warmup execution (waiting for concurrency slot)")
@@ -105,18 +104,11 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 		defer r.WarmupSemaphore.Release(1)
-		queueWait = time.Since(waitStart)
-		metrics.RecordWarmupQueueWait(pod.Namespace, queueWait.Seconds())
+		metrics.RecordWarmupQueueWait(pod.Namespace, time.Since(waitStart).Seconds())
 	}
 
 	logger.Info("starting warmup execution", "pod", pod.Name, "namespace", pod.Namespace)
-	if queueWait > 0 {
-		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupStarted, "StartWarmup",
-			"Starting warmup execution (queued for %v)", queueWait.Round(time.Millisecond))
-	} else {
-		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupStarted, "StartWarmup",
-			"Starting warmup execution")
-	}
+	r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupStarted, "StartWarmup", "Starting warmup execution")
 
 	// Increment pending warmup gauge and ensure it's decremented when function returns
 	metrics.IncrementPodsPendingWarmup(pod.Namespace, pod.Spec.NodeName)
