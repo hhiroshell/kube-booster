@@ -43,12 +43,14 @@ var (
 		[]string{"namespace", "node"},
 	)
 
-	// WarmupQueueWaitSeconds is a histogram tracking time pods wait for the warmup semaphore
+	// WarmupQueueWaitSeconds is a histogram tracking time pods wait for the warmup semaphore.
+	// Custom buckets extend up to 300s (5 minutes) to cover high-contention scenarios where
+	// a pod waits behind multiple long-running warmups at a rate-limited cluster.
 	WarmupQueueWaitSeconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "kube_booster_warmup_queue_wait_seconds",
 			Help:    "Time pods wait for the warmup semaphore before execution begins",
-			Buckets: prometheus.DefBuckets,
+			Buckets: []float64{0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300},
 		},
 		[]string{"namespace"},
 	)
