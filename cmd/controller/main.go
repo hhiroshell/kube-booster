@@ -60,7 +60,7 @@ func main() {
 	flag.BoolVar(&enableController, "enable-controller", true, "Enable pod controller")
 	flag.StringVar(&nodeName, "node-name", "", "Node name for node-local controller mode (enables node filtering)")
 	flag.IntVar(&maxConcurrentWarmups, "max-concurrent-warmups", 10, "Maximum concurrent warmup executions per controller instance (0 = unlimited)")
-	flag.Float64Var(&maxWarmupRPS, "max-warmup-rps", 0, "Maximum aggregate warmup HTTP request rate per controller instance in requests per second (0 = unlimited)")
+	flag.Float64Var(&maxWarmupRPS, "max-warmup-rps", 100, "Maximum aggregate warmup HTTP request rate per controller instance in requests per second (0 = unlimited)")
 
 	opts := zap.Options{
 		Development: true,
