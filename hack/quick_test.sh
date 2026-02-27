@@ -224,24 +224,42 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
-# Semaphore check: WarmupQueued event must be present
-RL_QUEUED=$(kubectl get events --field-selector involvedObject.name=${TEST_POD}-ratelimit \
-    -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null | grep -o "WarmupQueued" || true)
-if [ -n "$RL_QUEUED" ]; then
-    echo "   ✓ Semaphore: WarmupQueued event emitted (--max-concurrent-warmups active)"
+# Semaphore check: parse queue wait duration from WarmupStarted event message
+# Message format: "Starting warmup execution (queued for 250ms)"
+RL_STARTED_MSG=$(kubectl get events \
+    --field-selector involvedObject.name=${TEST_POD}-ratelimit,reason=WarmupStarted \
+    -o jsonpath='{.items[0].message}' 2>/dev/null || true)
+RL_QUEUE_WAIT=$(echo "$RL_STARTED_MSG" | grep -oP '(?<=queued for )[^)]+' || true)
+if [ -n "$RL_QUEUE_WAIT" ]; then
+    echo "   ✓ Semaphore: WarmupStarted shows queue wait of ${RL_QUEUE_WAIT} (--max-concurrent-warmups active)"
 else
-    echo "   ⚠ Semaphore: WarmupQueued event not found"
+    echo "   ⚠ Semaphore: no queue wait found in WarmupStarted message (semaphore may be disabled)"
 fi
 
-# Rate limiter check: WarmupCompleted confirms all 200 requests ran to completion
-RL_COMPLETED=$(kubectl get events --field-selector involvedObject.name=${TEST_POD}-ratelimit \
-    -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null | grep -o "WarmupCompleted\|WarmupFailed" || true)
-if echo "$RL_COMPLETED" | grep -q "WarmupCompleted"; then
-    echo "   ✓ Rate limiting: WarmupCompleted event found (200 requests processed with rate limiter active)"
-elif echo "$RL_COMPLETED" | grep -q "WarmupFailed"; then
-    echo "   ⚠ Rate limiting: WarmupFailed event found (fail-open behavior)"
+# Rate limiter check: parse duration from WarmupCompleted event message and verify >= 2.0s
+# Message format: "warmup completed: 200/200 requests succeeded (100.0%), duration=2.1s, P50=..., P99=..."
+# With default 100 RPS and 200 requests, minimum expected duration is 200/100 = 2.0s
+RL_COMPLETED_MSG=$(kubectl get events \
+    --field-selector involvedObject.name=${TEST_POD}-ratelimit,reason=WarmupCompleted \
+    -o jsonpath='{.items[0].message}' 2>/dev/null || true)
+RL_DURATION=$(echo "$RL_COMPLETED_MSG" | grep -oP '(?<=duration=)[^,]+' || true)
+
+if [ -n "$RL_DURATION" ]; then
+    # Convert Go duration string (e.g. "2.1s", "320ms", "1m2.3s") to seconds
+    DURATION_S=$(echo "$RL_DURATION" | awk '
+        /ms$/        { gsub(/ms/, ""); printf "%.3f", $0/1000; next }
+        /^[0-9.]+s$/ { gsub(/s/, ""); print; next }
+        /m/          { n=split($0,a,"m"); gsub(/s/,"",a[2]); printf "%.3f", a[1]*60+(a[2]+0); next }
+        { print 0 }
+    ')
+    IS_RATE_LIMITED=$(awk -v d="$DURATION_S" 'BEGIN { print (d >= 2.0) ? "1" : "0" }')
+    if [ "$IS_RATE_LIMITED" = "1" ]; then
+        echo "   ✓ Rate limiting: WarmupCompleted shows duration=${RL_DURATION} ≥ 2.0s (200 req @ 100 RPS)"
+    else
+        echo "   ⚠ Rate limiting: WarmupCompleted shows duration=${RL_DURATION} < 2.0s (may not be rate-limited)"
+    fi
 else
-    echo "   ⚠ Rate limiting: no WarmupCompleted/WarmupFailed event found"
+    echo "   ⚠ Rate limiting: WarmupCompleted event not found or duration missing"
 fi
 
 kubectl delete pod ${TEST_POD}-ratelimit --ignore-not-found=true --wait=false &>/dev/null || true
