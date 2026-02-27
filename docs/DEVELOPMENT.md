@@ -165,8 +165,8 @@ go tool cover -html=coverage.out
 
 Current coverage:
 - `pkg/webhook`: 84.2%
-- `pkg/controller`: 71.3%
-- `pkg/warmup`: 92.9%
+- `pkg/controller`: 74.2%
+- `pkg/warmup`: 88.6%
 - `pkg/metrics`: 100.0%
 
 ### Running Tests
@@ -236,6 +236,7 @@ kube-booster/
 │   │   ├── config_test.go
 │   │   ├── http_executor.go      # HTTP executor implementation (ASAP model)
 │   │   ├── http_executor_test.go
+│   │   ├── rate_limiter.go       # Nil-safe RPS rate limiter wrapper
 │   │   └── result.go             # Warmup result structure
 │   └── webhook/
 │       ├── constants.go          # Shared constants
@@ -370,6 +371,8 @@ In this architecture, both webhook and controller run in a single deployment:
 | `--enable-webhook` | `true` | Enable the mutating webhook server |
 | `--enable-controller` | `true` | Enable the pod controller |
 | `--node-name` | `""` | Node name for node-local mode (enables node filtering) |
+| `--max-concurrent-warmups` | `10` | Maximum concurrent warmup executions per controller instance (`0` = unlimited) |
+| `--max-warmup-rps` | `100` | Maximum aggregate warmup HTTP request rate in RPS across all concurrent warmups (`0` = unlimited) |
 
 ### Components
 
@@ -404,6 +407,7 @@ In this architecture, both webhook and controller run in a single deployment:
 - `setConditionTrue(ctx, pod)` - Updates pod condition
 
 **Event Constants:**
+- `ReasonWarmupQueued` - Emitted when a pod is waiting for a concurrency slot
 - `ReasonWarmupStarted` - Emitted when warmup begins
 - `ReasonWarmupCompleted` - Emitted on successful warmup
 - `ReasonWarmupFailed` - Emitted on warmup failure
@@ -459,11 +463,13 @@ In this architecture, both webhook and controller run in a single deployment:
 - `kube_booster_warmup_requests_total` (Counter) - Total HTTP requests sent
 - `kube_booster_warmup_duration_seconds` (Histogram) - Warmup duration
 - `kube_booster_pods_pending_warmup` (Gauge) - Pods currently pending warmup
+- `kube_booster_warmup_queue_wait_seconds` (Histogram) - Time pods wait for the warmup semaphore; uses custom buckets `[0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300]`
 
 **Key functions:**
 - `RecordWarmupResult(namespace, success, durationSeconds)` - Records outcome and duration
 - `RecordWarmupRequests(namespace, count)` - Records HTTP request count
 - `IncrementPodsPendingWarmup(namespace, node)` / `DecrementPodsPendingWarmup(namespace, node)` - Manages pending gauge
+- `RecordWarmupQueueWait(namespace, seconds)` - Records semaphore queue wait time (also called on context cancellation to capture partial waits)
 
 See [OBSERVABILITY.md](OBSERVABILITY.md) for PromQL queries, alerting rules, and Grafana dashboard.
 
@@ -499,9 +505,11 @@ PodReconciler.Reconcile()
     ↓
 Check containers ready
     ↓
+Emit WarmupQueued event + acquire semaphore slot (if --max-concurrent-warmups > 0)
+    ↓
 Increment pending warmup gauge + emit WarmupStarted event
     ↓
-Execute warmup requests back-to-back via HTTPExecutor
+Execute warmup requests back-to-back via HTTPExecutor (rate-limited if --max-warmup-rps > 0)
     ↓
 Decrement pending warmup gauge + record metrics (result, duration, requests)
     ↓
@@ -842,7 +850,7 @@ HTTP warmup execution is complete. See [CLAUDE.md](../CLAUDE.md) for the complet
 4. **Production Hardening**
    - High availability (leader election improvements)
    - Automated certificate rotation
-   - Rate limiting for warmup requests
+   - ~~Rate limiting for warmup requests~~ ✅ Implemented (`--max-warmup-rps`, `--max-concurrent-warmups`)
 
 5. **Architecture Improvements**
    - Webhook config validation at admission time

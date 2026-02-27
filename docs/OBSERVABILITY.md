@@ -43,7 +43,11 @@ A gauge showing the current number of pods waiting for warmup completion. Useful
 
 #### kube_booster_warmup_queue_wait_seconds
 
-A histogram tracking the time each pod spends waiting to acquire the warmup semaphore before execution begins. Only recorded when `--max-concurrent-warmups` is greater than 0. Uses default Prometheus buckets: `.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10` seconds.
+A histogram tracking the time each pod spends waiting to acquire the warmup semaphore before execution begins. Uses custom buckets calibrated to the warmup timeout range: `0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300` seconds.
+
+Recorded in two scenarios:
+- **Successful acquire**: total wait until the semaphore slot was granted
+- **Context cancellation**: partial wait time even when `Acquire` is cancelled, so high-contention scenarios are not silently dropped from the histogram
 
 High values indicate that the concurrency limit (`--max-concurrent-warmups`) is a bottleneck and may need to be increased.
 
@@ -254,6 +258,7 @@ In addition to Prometheus metrics, kube-booster emits Kubernetes Events for warm
 
 | Event | Type | Description |
 |-------|------|-------------|
+| `WarmupQueued` | Normal | Pod is waiting for a concurrency slot (when `--max-concurrent-warmups` is set) |
 | `WarmupStarted` | Normal | Warmup execution begins |
 | `WarmupCompleted` | Normal | Warmup completed successfully |
 | `WarmupFailed` | Warning | Warmup failed (config error or request failures) |
