@@ -18,7 +18,9 @@ type Executor interface {
 // HTTPExecutorOption is a functional option for HTTPExecutor.
 type HTTPExecutorOption func(*HTTPExecutor)
 
-// WithRateLimiter sets the rate limiter on the executor. A nil limiter means unlimited.
+// WithRateLimiter sets the rate limiter on the executor.
+// Passing nil (e.g., when --max-warmup-rps <= 0) is safe and disables rate limiting —
+// equivalent to not calling this option at all.
 func WithRateLimiter(rl *RequestRateLimiter) HTTPExecutorOption {
 	return func(e *HTTPExecutor) {
 		e.rateLimiter = rl
