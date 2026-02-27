@@ -233,20 +233,46 @@ The controller binary accepts the following flags for tuning concurrency and rat
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--max-concurrent-warmups` | `10` | Maximum concurrent warmup executions per controller instance. `0` disables the limit (unlimited). |
-| `--max-warmup-rps` | `0` | Maximum aggregate warmup HTTP request rate (requests per second) across all concurrent warmups. `0` disables rate limiting (unlimited). |
+| `--max-warmup-rps` | `100` | Maximum aggregate warmup HTTP request rate (requests per second) across all concurrent warmups. `0` disables rate limiting (unlimited). |
 
-These flags are set in the DaemonSet spec for the controller. For example, to allow 20 concurrent warmups and cap the aggregate HTTP request rate at 100 RPS:
+These flags are set in the DaemonSet spec for the controller. For example, to allow 20 concurrent warmups and cap the aggregate HTTP request rate at 200 RPS:
 
 ```yaml
 args:
   - --max-concurrent-warmups=20
-  - --max-warmup-rps=100
+  - --max-warmup-rps=200
 ```
 
 **When to tune these values:**
 - **Large-scale rollouts** (many pods starting simultaneously): lower `--max-concurrent-warmups` to prevent overwhelming the controller or target applications.
 - **Rate-sensitive applications**: use `--max-warmup-rps` to smooth out the warmup HTTP traffic across concurrent executions.
 - The semaphore is per-controller-instance (one per node in DaemonSet mode), so effective limits scale with node count.
+
+### Concurrency and Rate Limiting Interaction
+
+The two controls are complementary but interact in a way that affects pod warmup throughput:
+
+- **`--max-concurrent-warmups`** caps the number of pods being warmed up simultaneously. Each slot is held for the full duration of one pod's warmup.
+- **`--max-warmup-rps`** caps the total HTTP request rate across all concurrent warmups. The token bucket is shared globally — all concurrent goroutines draw from the same pool.
+
+When both are set, `--max-concurrent-warmups` determines how many pods warm up in parallel while `--max-warmup-rps` controls how long each slot is held. A pod doing 1,000 warmup requests at a shared rate limit of 100 RPS holds its slot for ~10 seconds regardless of how many other pods are competing. Operators running high request-count warmups should account for this when sizing `--max-warmup-rps`.
+
+### Safety Defaults and Risks
+
+The default values (`--max-concurrent-warmups=10`, `--max-warmup-rps=100`) protect the controller and target applications from unbounded load in most deployments. Be aware of these risks when overriding them:
+
+> **Warning:** Setting `--max-concurrent-warmups=0` disables the concurrency limit. Combined with `--max-warmup-rps=0`, a large-scale HPA scale-out can create unbounded concurrent goroutines, each issuing up to 12,000 HTTP requests. Only opt out of both limits if your network and application infrastructure can handle the resulting load.
+
+### Multi-Tenancy Considerations
+
+kube-booster uses a **single global token bucket** shared across all namespaces. This means:
+
+- A large rollout in one namespace can consume all available RPS tokens and delay warmup for pods in other namespaces.
+- There is no per-namespace rate isolation in the current implementation.
+
+To mitigate this in multi-tenant clusters:
+- Set `--max-warmup-rps` proportional to the expected number of namespaces doing concurrent rollouts.
+- Consider staggering large deployments across namespaces when possible.
 
 ## Verification
 
@@ -303,6 +329,7 @@ Events:
 
 | Event | Type | Description |
 |-------|------|-------------|
+| `WarmupQueued` | Normal | Pod is waiting for a concurrency slot (when `--max-concurrent-warmups` is set) |
 | `WarmupStarted` | Normal | Warmup execution begins |
 | `WarmupCompleted` | Normal | Warmup completed successfully |
 | `WarmupFailed` | Warning | Warmup failed (config error or request failures) |
