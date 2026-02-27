@@ -88,8 +88,6 @@ func main() {
 		"nodeName", nodeName,
 		"webhook-port", webhookPort,
 		"metrics-addr", metricsAddr,
-	)
-	setupLog.Info("concurrency config",
 		"maxConcurrentWarmups", maxConcurrentWarmups,
 		"maxWarmupRPS", maxWarmupRPS,
 	)
