@@ -261,7 +261,7 @@ When both are set, `--max-concurrent-warmups` determines how many pods warm up i
 
 The default values (`--max-concurrent-warmups=10`, `--max-warmup-rps=100`) protect the controller and target applications from unbounded load in most deployments. Be aware of these risks when overriding them:
 
-> **Warning:** Setting `--max-concurrent-warmups=0` disables the concurrency limit. Combined with `--max-warmup-rps=0`, a large-scale HPA scale-out can create unbounded concurrent goroutines, each issuing up to 12,000 HTTP requests. Only opt out of both limits if your network and application infrastructure can handle the resulting load.
+> **Warning:** Setting `--max-concurrent-warmups=0` disables the concurrency limit on each controller instance. In DaemonSet mode, each node runs its own controller; if many pods land on a single node (e.g., a large HPA scale-out), that node's controller can spawn an unbounded number of concurrent goroutines, each issuing up to 12,000 HTTP requests. Combined with `--max-warmup-rps=0`, this removes all load protection. Only opt out of both limits if your network and application infrastructure can handle the resulting load.
 
 ### Multi-Tenancy Considerations
 
