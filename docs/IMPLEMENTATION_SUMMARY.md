@@ -193,12 +193,14 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 | `kube_booster_warmup_requests_total` | Counter | `namespace` | Total HTTP requests sent during warmup |
 | `kube_booster_warmup_duration_seconds` | Histogram | `namespace` | Time from warmup start to completion |
 | `kube_booster_pods_pending_warmup` | Gauge | `namespace`, `node` | Pods currently waiting for warmup |
+| `kube_booster_warmup_queue_wait_seconds` | Histogram | `namespace` | Time pods wait for the warmup semaphore; custom buckets `[0.5…300]` |
 
 **Helper Functions:**
 - `RecordWarmupResult(namespace, success, durationSeconds)` - Records warmup outcome and duration
 - `RecordWarmupRequests(namespace, count)` - Records HTTP request count
 - `IncrementPodsPendingWarmup(namespace, node)` - Increments pending pods gauge
 - `DecrementPodsPendingWarmup(namespace, node)` - Decrements pending pods gauge
+- `RecordWarmupQueueWait(namespace, seconds)` - Records semaphore wait time (also called on context cancellation)
 
 **Registration:**
 - Metrics registered via `init()` using `controller-runtime`'s metrics registry
@@ -223,6 +225,7 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 **Event Types:**
 | Event Reason | Type | When Emitted |
 |--------------|------|--------------|
+| `WarmupQueued` | Normal | Pod is waiting for a semaphore slot (when `--max-concurrent-warmups > 0`) |
 | `WarmupStarted` | Normal | Warmup execution begins |
 | `WarmupCompleted` | Normal | Warmup completed successfully |
 | `WarmupFailed` | Warning | Config error or warmup request failures |
@@ -242,8 +245,8 @@ Events:
 ## Test Coverage
 
 - **pkg/webhook**: 84.2% coverage
-- **pkg/controller**: 71.3% coverage
-- **pkg/warmup**: 92.9% coverage
+- **pkg/controller**: 74.2% coverage
+- **pkg/warmup**: 88.6% coverage
 - **pkg/metrics**: 100.0% coverage
 
 All tests pass successfully.
@@ -295,14 +298,15 @@ User deploys pod with annotation
 4. Verify pod phase is Running
 5. Verify all container statuses are ready
 6. Verify ContainersReady condition is True
-7. Increment pending warmup gauge, emit `WarmupStarted` event
-8. Parse warmup config from annotations
-9. Execute warmup requests via HTTPExecutor
-10. Decrement pending warmup gauge, record metrics (result, duration, requests)
-11. Emit `WarmupCompleted` or `WarmupFailed` event
-12. Set warmup condition to True and update pod status
-13. Emit `ConditionUpdated` event
-14. Requeue with delay if conditions not yet met
+7. Emit `WarmupQueued` event and acquire semaphore slot (if `--max-concurrent-warmups > 0`); record partial wait on context cancellation
+8. Increment pending warmup gauge, emit `WarmupStarted` event
+9. Parse warmup config from annotations
+10. Execute warmup requests via HTTPExecutor (rate-limited by shared token bucket if `--max-warmup-rps > 0`)
+11. Decrement pending warmup gauge, record metrics (result, duration, requests)
+12. Emit `WarmupCompleted` or `WarmupFailed` event
+13. Set warmup condition to True and update pod status
+14. Emit `ConditionUpdated` event
+15. Requeue with delay if conditions not yet met
 
 ### Fail-Open Design
 - Webhook has `failurePolicy: Ignore`
@@ -354,6 +358,7 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ✅ Counter for total HTTP requests sent during warmup
 ✅ Histogram for warmup duration with default buckets
 ✅ Gauge for pods pending warmup by namespace and node
+✅ Histogram for semaphore queue wait time with custom buckets calibrated to warmup timeout range
 ✅ Controller instrumented to record metrics at warmup start/completion
 ✅ Metrics exposed on `:8080/metrics` endpoint
 ✅ Comprehensive observability documentation with PromQL queries and alerting rules
@@ -444,7 +449,7 @@ The implementation is complete and ready for testing. The system provides:
 ✓ Fail-open behavior ensuring pod availability
 ✓ Kubernetes Events for warmup lifecycle visibility
 ✓ Prometheus metrics for monitoring and alerting
-✓ Good test coverage (84.2% webhook, 92.9% warmup, 71.3% controller, 100% metrics)
+✓ Good test coverage (84.2% webhook, 88.6% warmup, 74.2% controller, 100% metrics)
 ✓ Comprehensive documentation (usage, development, observability)
 ✓ Straightforward deployment
 ✓ Kubernetes best practices (readiness gates, controller-runtime, new events API)

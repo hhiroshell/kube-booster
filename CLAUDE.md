@@ -80,7 +80,7 @@ spec:
 
 **Observability:**
 - Kubernetes Events emitted for warmup lifecycle (visible via `kubectl describe pod`)
-- Events: `WarmupStarted`, `WarmupCompleted`, `WarmupFailed`, `ConditionUpdated`
+- Events: `WarmupQueued`, `WarmupStarted`, `WarmupCompleted`, `WarmupFailed`, `ConditionUpdated`
 - Prometheus metrics exported on `:8080/metrics` for monitoring and alerting
 - See `docs/OBSERVABILITY.md` for full details, PromQL queries, and Grafana dashboard
 
@@ -136,9 +136,9 @@ The controller follows the standard Kubernetes controller pattern with readiness
 1. **Mutating webhook** inspects pod creation events
 2. If pod has `kube-booster.io/warmup: "enabled"`, inject readiness gate: `kube-booster.io/warmup-ready`
 3. **Controller** watches pods with the injected readiness gate
-4. Controller waits for containers to be ready, then emits `WarmupStarted` event
-5. Controller increments `pods_pending_warmup` gauge and parses warmup config from annotations
-6. Controller sends HTTP warmup requests back-to-back using net/http (ASAP model)
+4. Controller waits for containers to be ready, emits `WarmupQueued` event and acquires semaphore slot (if `--max-concurrent-warmups > 0`)
+5. Controller emits `WarmupStarted` event, increments `pods_pending_warmup` gauge, and parses warmup config from annotations
+6. Controller sends HTTP warmup requests back-to-back using net/http (ASAP model), rate-limited by shared token bucket if `--max-warmup-rps > 0`
 7. Controller decrements `pods_pending_warmup` gauge and records Prometheus metrics (duration, request count)
 8. Controller emits `WarmupCompleted` or `WarmupFailed` event with result details
 9. Controller updates pod condition `kube-booster.io/warmup-ready` to `True` when warmup completes (or on failure, fail-open)

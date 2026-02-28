@@ -15,20 +15,37 @@ type Executor interface {
 	Execute(ctx context.Context, config *Config) *Result
 }
 
+// HTTPExecutorOption is a functional option for HTTPExecutor.
+type HTTPExecutorOption func(*HTTPExecutor)
+
+// WithRateLimiter sets the rate limiter on the executor.
+// Passing nil (e.g., when --max-warmup-rps <= 0) is safe and disables rate limiting —
+// equivalent to not calling this option at all.
+func WithRateLimiter(rl *RequestRateLimiter) HTTPExecutorOption {
+	return func(e *HTTPExecutor) {
+		e.rateLimiter = rl
+	}
+}
+
 // HTTPExecutor fires warmup requests back-to-back (ASAP model) using net/http.
 type HTTPExecutor struct {
-	logger logr.Logger
-	client *http.Client
+	logger      logr.Logger
+	client      *http.Client
+	rateLimiter *RequestRateLimiter // nil = unlimited
 }
 
 // NewHTTPExecutor creates a new HTTPExecutor
-func NewHTTPExecutor(logger logr.Logger) *HTTPExecutor {
-	return &HTTPExecutor{
+func NewHTTPExecutor(logger logr.Logger, opts ...HTTPExecutorOption) *HTTPExecutor {
+	e := &HTTPExecutor{
 		logger: logger,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // Execute performs warmup requests back-to-back as fast as possible
@@ -63,6 +80,14 @@ func (e *HTTPExecutor) Execute(ctx context.Context, config *Config) *Result {
 
 	for i := 0; i < config.RequestCount; i++ {
 		if warmupCtx.Err() != nil {
+			break
+		}
+
+		if err := e.rateLimiter.Wait(warmupCtx); err != nil {
+			// Context cancelled or deadline exceeded before token was available.
+			// Count remaining un-attempted requests as failed so the result
+			// message and fail-open decision reflect the full picture.
+			failCount += config.RequestCount - successCount - failCount
 			break
 		}
 

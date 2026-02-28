@@ -51,7 +51,7 @@ fi
 # Clean up any previous test pods
 echo ""
 echo "2. Cleaning up previous test pods..."
-kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup --ignore-not-found=true --wait=false &> /dev/null || true
+kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup ${TEST_POD}-ratelimit --ignore-not-found=true --wait=false &> /dev/null || true
 sleep 2
 
 # Test webhook injection with warmup-enabled pod
@@ -149,10 +149,17 @@ echo ""
 echo "8. Verifying Kubernetes Events..."
 EVENTS=$(kubectl get events --field-selector involvedObject.name=${TEST_POD} -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null || true)
 
+WARMUP_QUEUED=$(echo "$EVENTS" | grep -o "WarmupQueued" || true)
 WARMUP_STARTED=$(echo "$EVENTS" | grep -o "WarmupStarted" || true)
 WARMUP_COMPLETED=$(echo "$EVENTS" | grep -o "WarmupCompleted" || true)
 WARMUP_FAILED=$(echo "$EVENTS" | grep -o "WarmupFailed" || true)
 CONDITION_UPDATED=$(echo "$EVENTS" | grep -o "ConditionUpdated" || true)
+
+if [ -n "$WARMUP_QUEUED" ]; then
+    echo "   ✓ WarmupQueued event found (semaphore concurrency control active)"
+else
+    echo "   ⚠ WarmupQueued event not found (expected when --max-concurrent-warmups > 0)"
+fi
 
 if [ -n "$WARMUP_STARTED" ]; then
     echo "   ✓ WarmupStarted event found"
@@ -181,9 +188,67 @@ kubectl get events --field-selector involvedObject.name=${TEST_POD},source=kube-
     echo "     $line"
 done || echo "     (no events found)"
 
+# Test concurrency control and rate limiting
+echo ""
+echo "9. Testing concurrency control and rate limiting..."
+echo "   Creating test pod with 200 warmup requests (200 req @ default 100 RPS = ≥2s)..."
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${TEST_POD}-ratelimit
+  namespace: ${NAMESPACE}
+  annotations:
+    kube-booster.io/warmup: "enabled"
+    kube-booster.io/warmup-endpoint: "/"
+    kube-booster.io/warmup-requests: "200"
+    kube-booster.io/warmup-timeout: "120s"
+    kube-booster.io/warmup-port: "80"
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    ports:
+    - containerPort: 80
+EOF
+
+kubectl wait --for=condition=ContainersReady pod/${TEST_POD}-ratelimit --timeout=60s || true
+
+echo "   Waiting for warmup to complete..."
+for i in $(seq 1 60); do
+    RL_EVENTS=$(kubectl get events --field-selector involvedObject.name=${TEST_POD}-ratelimit \
+        -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null || true)
+    if echo "$RL_EVENTS" | grep -q "WarmupCompleted\|WarmupFailed"; then
+        break
+    fi
+    sleep 1
+done
+
+# Semaphore check: WarmupQueued event must be present
+RL_QUEUED=$(kubectl get events --field-selector involvedObject.name=${TEST_POD}-ratelimit \
+    -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null | grep -o "WarmupQueued" || true)
+if [ -n "$RL_QUEUED" ]; then
+    echo "   ✓ Semaphore: WarmupQueued event emitted (--max-concurrent-warmups active)"
+else
+    echo "   ⚠ Semaphore: WarmupQueued event not found"
+fi
+
+# Rate limiter check: WarmupCompleted confirms all 200 requests ran to completion
+RL_COMPLETED=$(kubectl get events --field-selector involvedObject.name=${TEST_POD}-ratelimit \
+    -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null | grep -o "WarmupCompleted\|WarmupFailed" || true)
+if echo "$RL_COMPLETED" | grep -q "WarmupCompleted"; then
+    echo "   ✓ Rate limiting: WarmupCompleted event found (200 requests processed with rate limiter active)"
+elif echo "$RL_COMPLETED" | grep -q "WarmupFailed"; then
+    echo "   ⚠ Rate limiting: WarmupFailed event found (fail-open behavior)"
+else
+    echo "   ⚠ Rate limiting: no WarmupCompleted/WarmupFailed event found"
+fi
+
+kubectl delete pod ${TEST_POD}-ratelimit --ignore-not-found=true --wait=false &>/dev/null || true
+
 # Test without annotation
 echo ""
-echo "9. Testing pod without annotation..."
+echo "10. Testing pod without annotation..."
 kubectl run ${TEST_POD}-no-warmup --image=nginx:1.25 --restart=Never
 
 sleep 2
@@ -199,8 +264,8 @@ fi
 
 # Cleanup
 echo ""
-echo "10. Cleaning up test pods..."
-kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup --ignore-not-found=true
+echo "11. Cleaning up test pods..."
+kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup ${TEST_POD}-ratelimit --ignore-not-found=true
 echo "   ✓ Cleanup complete"
 
 echo ""
@@ -215,7 +280,9 @@ echo "  - Readiness gate injection via mutating webhook"
 echo "  - Warmup configuration via annotations"
 echo "  - HTTP warmup request execution"
 echo "  - Pod condition update after warmup"
-echo "  - Kubernetes Events for warmup lifecycle"
+echo "  - Kubernetes Events for warmup lifecycle (WarmupQueued, WarmupStarted, WarmupCompleted/Failed, ConditionUpdated)"
+echo "  - Semaphore concurrency control (--max-concurrent-warmups)"
+echo "  - RPS rate limiting (--max-warmup-rps)"
 echo ""
 echo "Next steps:"
 echo "  - Deploy sample application: make deploy-sample"

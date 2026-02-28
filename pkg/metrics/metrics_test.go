@@ -155,6 +155,34 @@ func TestDecrementPodsPendingWarmup(t *testing.T) {
 	}
 }
 
+func TestRecordWarmupQueueWait(t *testing.T) {
+	WarmupQueueWaitSeconds.Reset()
+
+	RecordWarmupQueueWait("default", 2.0)
+
+	expected := strings.NewReader(`
+# HELP kube_booster_warmup_queue_wait_seconds Time pods wait for the warmup semaphore before execution begins
+# TYPE kube_booster_warmup_queue_wait_seconds histogram
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="0.5"} 0
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="1"} 0
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="2.5"} 1
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="5"} 1
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="10"} 1
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="20"} 1
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="30"} 1
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="60"} 1
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="120"} 1
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="300"} 1
+kube_booster_warmup_queue_wait_seconds_bucket{namespace="default",le="+Inf"} 1
+kube_booster_warmup_queue_wait_seconds_sum{namespace="default"} 2
+kube_booster_warmup_queue_wait_seconds_count{namespace="default"} 1
+`)
+
+	if err := testutil.CollectAndCompare(WarmupQueueWaitSeconds, expected, "kube_booster_warmup_queue_wait_seconds"); err != nil {
+		t.Errorf("unexpected histogram state: %v", err)
+	}
+}
+
 func TestPodsPendingWarmup_MultipleNodes(t *testing.T) {
 	PodsPendingWarmup.Reset()
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/sync/semaphore"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +22,7 @@ import (
 
 // Event reason constants
 const (
+	ReasonWarmupQueued     = "WarmupQueued"
 	ReasonWarmupStarted    = "WarmupStarted"
 	ReasonWarmupCompleted  = "WarmupCompleted"
 	ReasonWarmupFailed     = "WarmupFailed"
@@ -30,9 +32,10 @@ const (
 // PodReconciler reconciles pods with warmup readiness gates
 type PodReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	WarmupExecutor warmup.Executor
-	Recorder       events.EventRecorder
+	Scheme          *runtime.Scheme
+	WarmupExecutor  warmup.Executor
+	Recorder        events.EventRecorder
+	WarmupSemaphore *semaphore.Weighted // nil = unlimited concurrency
 }
 
 // Reconcile handles pod reconciliation
@@ -89,6 +92,21 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	// All conditions met, execute warmup
+
+	// Acquire semaphore if concurrency limiting is enabled
+	if r.WarmupSemaphore != nil {
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupQueued, "QueueWarmup",
+			"Pod queued for warmup execution (waiting for concurrency slot)")
+		waitStart := time.Now()
+		if err := r.WarmupSemaphore.Acquire(ctx, 1); err != nil {
+			// Context cancelled while waiting; record partial wait before requeuing
+			metrics.RecordWarmupQueueWait(pod.Namespace, time.Since(waitStart).Seconds())
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		defer r.WarmupSemaphore.Release(1)
+		metrics.RecordWarmupQueueWait(pod.Namespace, time.Since(waitStart).Seconds())
+	}
+
 	logger.Info("starting warmup execution", "pod", pod.Name, "namespace", pod.Namespace)
 	r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupStarted, "StartWarmup", "Starting warmup execution")
 

@@ -45,10 +45,11 @@ func (r *Result) BuildMessage() string {
 	successRate := float64(r.RequestsCompleted) / float64(r.RequestsCompleted+r.RequestsFailed) * 100
 
 	if r.Success {
-		return fmt.Sprintf("warmup completed: %d/%d requests succeeded (%.1f%%), P50=%v, P99=%v",
+		return fmt.Sprintf("warmup completed: %d/%d requests succeeded (%.1f%%), duration=%v, P50=%v, P99=%v",
 			r.RequestsCompleted,
 			r.RequestsCompleted+r.RequestsFailed,
 			successRate,
+			r.TotalDuration.Round(time.Millisecond),
 			r.LatencyP50,
 			r.LatencyP99)
 	}
