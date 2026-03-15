@@ -19,7 +19,7 @@ func NewRequestRateLimiter(rps float64) *RequestRateLimiter {
 		return nil
 	}
 	return &RequestRateLimiter{
-		limiter: rate.NewLimiter(rate.Limit(rps), 1),
+		limiter: rate.NewLimiter(rate.Limit(rps), max(1, int(rps))),
 	}
 }
 
