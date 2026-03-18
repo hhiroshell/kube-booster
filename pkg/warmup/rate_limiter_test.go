@@ -59,17 +59,54 @@ func TestRequestRateLimiter_Throttles(t *testing.T) {
 }
 
 func TestNewRequestRateLimiter_BurstEqualsRPS(t *testing.T) {
+	// 10 RPS → burst=10: all 10 tokens should be available immediately
 	rl := NewRequestRateLimiter(10)
-	if rl.limiter.Burst() != 10 {
-		t.Errorf("burst = %d, want 10", rl.limiter.Burst())
+	if rl == nil {
+		t.Fatal("NewRequestRateLimiter(10) returned nil")
+	}
+	for i := range 10 {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		err := rl.Wait(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("Wait() #%d timed out, expected burst of 10", i+1)
+		}
+	}
+	// 11th token requires refill (~100ms at 10 RPS); must block within 50ms timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := rl.Wait(ctx); err == nil {
+		t.Error("Wait() #11 returned immediately, expected throttling beyond burst")
 	}
 }
 
 func TestNewRequestRateLimiter_FractionalRPS_BurstAtLeastOne(t *testing.T) {
+	// 0.5 RPS → burst=1: first token available immediately, second must wait ~2s
 	rl := NewRequestRateLimiter(0.5)
-	if rl.limiter.Burst() != 1 {
-		t.Errorf("burst = %d, want 1", rl.limiter.Burst())
+	if rl == nil {
+		t.Fatal("NewRequestRateLimiter(0.5) returned nil")
 	}
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel1()
+	if err := rl.Wait(ctx1); err != nil {
+		t.Fatal("first Wait() timed out, expected burst of at least 1")
+	}
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel2()
+	if err := rl.Wait(ctx2); err == nil {
+		t.Error("second Wait() returned immediately, expected throttling beyond burst=1")
+	}
+}
+
+func TestNewRequestRateLimiter_LargeRPS_NoPanic(t *testing.T) {
+	// Very large float64 must not cause integer overflow or panic in rate.NewLimiter
+	rl := NewRequestRateLimiter(1e19)
+	if rl == nil {
+		t.Fatal("NewRequestRateLimiter(1e19) returned nil")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_ = rl.Wait(ctx)
 }
 
 func TestRequestRateLimiter_ContextCancellation(t *testing.T) {
