@@ -2,9 +2,14 @@ package warmup
 
 import (
 	"context"
+	"math"
 
 	"golang.org/x/time/rate"
 )
+
+// maxBurst caps the token bucket burst size to prevent integer overflow when
+// converting a very large float64 rps value to int.
+const maxBurst = 10_000
 
 // RequestRateLimiter wraps x/time/rate.Limiter with a nil-safe design.
 // A nil receiver is valid and means no rate limiting is applied.
@@ -18,8 +23,9 @@ func NewRequestRateLimiter(rps float64) *RequestRateLimiter {
 	if rps <= 0 {
 		return nil
 	}
+	burst := max(1, min(int(math.Round(rps)), maxBurst))
 	return &RequestRateLimiter{
-		limiter: rate.NewLimiter(rate.Limit(rps), max(1, int(rps))),
+		limiter: rate.NewLimiter(rate.Limit(rps), burst),
 	}
 }
 
