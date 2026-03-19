@@ -9,7 +9,7 @@ import (
 
 // maxBurst caps the token bucket burst size to prevent integer overflow when
 // converting a very large float64 rps value to int.
-const maxBurst = 10_000
+const maxBurst = 100_000
 
 // RequestRateLimiter wraps x/time/rate.Limiter with a nil-safe design.
 // A nil receiver is valid and means no rate limiting is applied.
