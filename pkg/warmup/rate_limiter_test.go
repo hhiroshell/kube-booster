@@ -106,7 +106,9 @@ func TestNewRequestRateLimiter_LargeRPS_NoPanic(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_ = rl.Wait(ctx)
+	if err := rl.Wait(ctx); err != nil && ctx.Err() == nil {
+		t.Fatalf("Wait() returned unexpected error: %v", err)
+	}
 }
 
 func TestRequestRateLimiter_ContextCancellation(t *testing.T) {
