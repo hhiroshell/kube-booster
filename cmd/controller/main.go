@@ -48,7 +48,7 @@ func main() {
 	var enableController bool
 	var nodeName string
 	var maxConcurrentWarmups int
-	var maxWarmupRPS float64
+	var maxWarmupRPS int
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -60,7 +60,7 @@ func main() {
 	flag.BoolVar(&enableController, "enable-controller", true, "Enable pod controller")
 	flag.StringVar(&nodeName, "node-name", "", "Node name for node-local controller mode (enables node filtering)")
 	flag.IntVar(&maxConcurrentWarmups, "max-concurrent-warmups", 10, "Maximum concurrent warmup executions per controller instance (0 = unlimited)")
-	flag.Float64Var(&maxWarmupRPS, "max-warmup-rps", 100, "Maximum aggregate warmup HTTP request rate per controller instance in requests per second (0 = unlimited)")
+	flag.IntVar(&maxWarmupRPS, "max-warmup-rps", 100, "Maximum aggregate warmup HTTP request rate per controller instance in requests per second (0 = unlimited)")
 
 	opts := zap.Options{
 		Development: true,
@@ -127,7 +127,7 @@ func main() {
 	}
 
 	// Create rate limiter (nil if maxWarmupRPS <= 0)
-	rateLimiter := warmup.NewRequestRateLimiter(maxWarmupRPS)
+	rateLimiter := warmup.NewRequestRateLimiter(float64(maxWarmupRPS))
 
 	// Create warmup executor
 	warmupExecutor := warmup.NewHTTPExecutor(ctrl.Log.WithName("warmup"),
