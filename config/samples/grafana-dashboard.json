@@ -510,12 +510,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(kube_booster_pods_pending_warmup{namespace=~\"$namespace\"})",
-          "legendFormat": "Pending Pods",
+          "expr": "sum(kube_booster_warmup_active_pods{namespace=~\"$namespace\"})",
+          "legendFormat": "Active Warmup Pods",
           "refId": "A"
         }
       ],
-      "title": "Pods Pending Warmup",
+      "title": "Active Warmup Pods",
       "type": "stat"
     },
     {
@@ -597,12 +597,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(kube_booster_pods_pending_warmup{namespace=~\"$namespace\"}) by (namespace)",
+          "expr": "sum(kube_booster_warmup_active_pods{namespace=~\"$namespace\"}) by (namespace)",
           "legendFormat": "{{namespace}}",
           "refId": "A"
         }
       ],
-      "title": "Pending Pods by Namespace",
+      "title": "Active Warmup Pods by Namespace",
       "type": "timeseries"
     },
     {

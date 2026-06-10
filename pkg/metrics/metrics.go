@@ -34,11 +34,11 @@ var (
 		[]string{"namespace"},
 	)
 
-	// PodsPendingWarmup is a gauge tracking pods currently waiting for warmup
-	PodsPendingWarmup = prometheus.NewGaugeVec(
+	// ActiveWarmupPods is a gauge tracking pods currently executing warmup requests
+	ActiveWarmupPods = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "kube_booster_pods_pending_warmup",
-			Help: "Pods currently waiting for warmup",
+			Name: "kube_booster_warmup_active_pods",
+			Help: "Pods currently executing warmup requests",
 		},
 		[]string{"namespace", "node"},
 	)
@@ -61,7 +61,7 @@ func init() {
 		WarmupTotal,
 		WarmupRequestsTotal,
 		WarmupDurationSeconds,
-		PodsPendingWarmup,
+		ActiveWarmupPods,
 		WarmupQueueWaitSeconds,
 	)
 }
@@ -81,20 +81,20 @@ func RecordWarmupRequests(namespace string, count int) {
 	WarmupRequestsTotal.WithLabelValues(namespace).Add(float64(count))
 }
 
-// IncrementPodsPendingWarmup increments the pending pods gauge for a namespace/node
-func IncrementPodsPendingWarmup(namespace, node string) {
-	PodsPendingWarmup.WithLabelValues(namespace, node).Inc()
+// IncrementActiveWarmupPods increments the active warmup pods gauge for a namespace/node
+func IncrementActiveWarmupPods(namespace, node string) {
+	ActiveWarmupPods.WithLabelValues(namespace, node).Inc()
 }
 
-// DecrementPodsPendingWarmup decrements the pending pods gauge for a namespace/node
-func DecrementPodsPendingWarmup(namespace, node string) {
-	PodsPendingWarmup.WithLabelValues(namespace, node).Dec()
+// DecrementActiveWarmupPods decrements the active warmup pods gauge for a namespace/node
+func DecrementActiveWarmupPods(namespace, node string) {
+	ActiveWarmupPods.WithLabelValues(namespace, node).Dec()
 }
 
-// SetPodsPendingWarmup sets the pending pods gauge to a specific value.
+// SetActiveWarmupPods sets the active warmup pods gauge to a specific value.
 // Exported for use in tests to set up initial gauge values.
-func SetPodsPendingWarmup(namespace, node string, count float64) {
-	PodsPendingWarmup.WithLabelValues(namespace, node).Set(count)
+func SetActiveWarmupPods(namespace, node string, count float64) {
+	ActiveWarmupPods.WithLabelValues(namespace, node).Set(count)
 }
 
 // RecordWarmupQueueWait records the time a pod waited for the warmup semaphore.

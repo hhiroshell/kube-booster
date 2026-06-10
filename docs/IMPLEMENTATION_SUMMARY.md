@@ -192,14 +192,14 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 | `kube_booster_warmup_total` | Counter | `namespace`, `result` | Total warmup executions (result: success/failure) |
 | `kube_booster_warmup_requests_total` | Counter | `namespace` | Total HTTP requests sent during warmup |
 | `kube_booster_warmup_duration_seconds` | Histogram | `namespace` | Time from warmup start to completion |
-| `kube_booster_pods_pending_warmup` | Gauge | `namespace`, `node` | Pods currently waiting for warmup |
+| `kube_booster_warmup_active_pods` | Gauge | `namespace`, `node` | Pods currently executing warmup requests |
 | `kube_booster_warmup_queue_wait_seconds` | Histogram | `namespace` | Time pods wait for the warmup semaphore; custom buckets `[0.5…300]` |
 
 **Helper Functions:**
 - `RecordWarmupResult(namespace, success, durationSeconds)` - Records warmup outcome and duration
 - `RecordWarmupRequests(namespace, count)` - Records HTTP request count
-- `IncrementPodsPendingWarmup(namespace, node)` - Increments pending pods gauge
-- `DecrementPodsPendingWarmup(namespace, node)` - Decrements pending pods gauge
+- `IncrementActiveWarmupPods(namespace, node)` - Increments active warmup pods gauge
+- `DecrementActiveWarmupPods(namespace, node)` - Decrements active warmup pods gauge
 - `RecordWarmupQueueWait(namespace, seconds)` - Records semaphore wait time (also called on context cancellation)
 
 **Registration:**

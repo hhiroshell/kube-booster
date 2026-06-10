@@ -120,38 +120,38 @@ func TestRecordWarmupRequests_Accumulates(t *testing.T) {
 	}
 }
 
-func TestSetPodsPendingWarmup(t *testing.T) {
-	PodsPendingWarmup.Reset()
+func TestSetActiveWarmupPods(t *testing.T) {
+	ActiveWarmupPods.Reset()
 
-	SetPodsPendingWarmup("default", "node-1", 5)
+	SetActiveWarmupPods("default", "node-1", 5)
 
-	count := testutil.ToFloat64(PodsPendingWarmup.WithLabelValues("default", "node-1"))
+	count := testutil.ToFloat64(ActiveWarmupPods.WithLabelValues("default", "node-1"))
 	if count != 5 {
-		t.Errorf("expected pods_pending_warmup = 5, got %f", count)
+		t.Errorf("expected warmup_active_pods = 5, got %f", count)
 	}
 }
 
-func TestIncrementPodsPendingWarmup(t *testing.T) {
-	PodsPendingWarmup.Reset()
+func TestIncrementActiveWarmupPods(t *testing.T) {
+	ActiveWarmupPods.Reset()
 
-	IncrementPodsPendingWarmup("default", "node-1")
-	IncrementPodsPendingWarmup("default", "node-1")
+	IncrementActiveWarmupPods("default", "node-1")
+	IncrementActiveWarmupPods("default", "node-1")
 
-	count := testutil.ToFloat64(PodsPendingWarmup.WithLabelValues("default", "node-1"))
+	count := testutil.ToFloat64(ActiveWarmupPods.WithLabelValues("default", "node-1"))
 	if count != 2 {
-		t.Errorf("expected pods_pending_warmup = 2, got %f", count)
+		t.Errorf("expected warmup_active_pods = 2, got %f", count)
 	}
 }
 
-func TestDecrementPodsPendingWarmup(t *testing.T) {
-	PodsPendingWarmup.Reset()
+func TestDecrementActiveWarmupPods(t *testing.T) {
+	ActiveWarmupPods.Reset()
 
-	SetPodsPendingWarmup("default", "node-1", 5)
-	DecrementPodsPendingWarmup("default", "node-1")
+	SetActiveWarmupPods("default", "node-1", 5)
+	DecrementActiveWarmupPods("default", "node-1")
 
-	count := testutil.ToFloat64(PodsPendingWarmup.WithLabelValues("default", "node-1"))
+	count := testutil.ToFloat64(ActiveWarmupPods.WithLabelValues("default", "node-1"))
 	if count != 4 {
-		t.Errorf("expected pods_pending_warmup = 4, got %f", count)
+		t.Errorf("expected warmup_active_pods = 4, got %f", count)
 	}
 }
 
@@ -183,16 +183,16 @@ kube_booster_warmup_queue_wait_seconds_count{namespace="default"} 1
 	}
 }
 
-func TestPodsPendingWarmup_MultipleNodes(t *testing.T) {
-	PodsPendingWarmup.Reset()
+func TestActiveWarmupPods_MultipleNodes(t *testing.T) {
+	ActiveWarmupPods.Reset()
 
-	SetPodsPendingWarmup("default", "node-1", 3)
-	SetPodsPendingWarmup("default", "node-2", 2)
-	SetPodsPendingWarmup("kube-system", "node-1", 1)
+	SetActiveWarmupPods("default", "node-1", 3)
+	SetActiveWarmupPods("default", "node-2", 2)
+	SetActiveWarmupPods("kube-system", "node-1", 1)
 
-	node1Default := testutil.ToFloat64(PodsPendingWarmup.WithLabelValues("default", "node-1"))
-	node2Default := testutil.ToFloat64(PodsPendingWarmup.WithLabelValues("default", "node-2"))
-	node1KubeSystem := testutil.ToFloat64(PodsPendingWarmup.WithLabelValues("kube-system", "node-1"))
+	node1Default := testutil.ToFloat64(ActiveWarmupPods.WithLabelValues("default", "node-1"))
+	node2Default := testutil.ToFloat64(ActiveWarmupPods.WithLabelValues("default", "node-2"))
+	node1KubeSystem := testutil.ToFloat64(ActiveWarmupPods.WithLabelValues("kube-system", "node-1"))
 
 	if node1Default != 3 {
 		t.Errorf("expected default/node-1 = 3, got %f", node1Default)

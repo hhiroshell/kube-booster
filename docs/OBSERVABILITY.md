@@ -13,7 +13,7 @@ kube-booster exports Prometheus metrics on the controller's metrics endpoint (de
 | `kube_booster_warmup_total` | Counter | `namespace`, `result` | Total warmup executions (result: success/failure) |
 | `kube_booster_warmup_requests_total` | Counter | `namespace` | Total HTTP requests sent during warmup |
 | `kube_booster_warmup_duration_seconds` | Histogram | `namespace` | Time from warmup start to completion |
-| `kube_booster_pods_pending_warmup` | Gauge | `namespace`, `node` | Pods currently waiting for warmup |
+| `kube_booster_warmup_active_pods` | Gauge | `namespace`, `node` | Pods currently executing warmup requests |
 | `kube_booster_warmup_queue_wait_seconds` | Histogram | `namespace` | Time pods wait for the warmup semaphore before execution begins |
 
 ### Metric Details
@@ -37,9 +37,9 @@ A histogram tracking the total duration of warmup executions. Uses default Prome
 
 This metric helps identify slow warmups that may delay pod readiness.
 
-#### kube_booster_pods_pending_warmup
+#### kube_booster_warmup_active_pods
 
-A gauge showing the current number of pods waiting for warmup completion. Useful for capacity planning and identifying warmup bottlenecks.
+A gauge showing the current number of pods actively executing warmup requests. Useful for capacity planning and identifying warmup bottlenecks.
 
 #### kube_booster_warmup_queue_wait_seconds
 
@@ -137,17 +137,17 @@ histogram_quantile(0.95, sum(rate(kube_booster_warmup_duration_seconds_bucket[5m
 histogram_quantile(0.50, sum(rate(kube_booster_warmup_duration_seconds_bucket[5m])) by (le))
 ```
 
-### Pending Pods
+### Active Warmup Pods
 
 ```promql
-# Total pending pods across all namespaces
-sum(kube_booster_pods_pending_warmup)
+# Total active warmup pods across all namespaces
+sum(kube_booster_warmup_active_pods)
 
-# Pending pods by namespace
-sum(kube_booster_pods_pending_warmup) by (namespace)
+# Active warmup pods by namespace
+sum(kube_booster_warmup_active_pods) by (namespace)
 
-# Pending pods by node
-sum(kube_booster_pods_pending_warmup) by (node)
+# Active warmup pods by node
+sum(kube_booster_warmup_active_pods) by (node)
 ```
 
 ### Warmup Throughput
@@ -212,13 +212,13 @@ groups:
 
       # Alert on warmup backlog
       - alert: KubeBoosterWarmupBacklog
-        expr: sum(kube_booster_pods_pending_warmup) > 10
+        expr: sum(kube_booster_warmup_active_pods) > 10
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: "Warmup backlog building up"
-          description: "More than 10 pods are pending warmup"
+          description: "More than 10 pods are actively executing warmup"
 
       # Alert on long semaphore queue wait (concurrency limit may be too low)
       - alert: KubeBoosterHighSemaphoreWaitTime
@@ -285,8 +285,8 @@ The metrics use namespace-level labels to avoid high cardinality issues:
 - Pod names are NOT included in counter/histogram labels
 - Node names are only used in the gauge metric (bounded by cluster size)
 
-**`kube_booster_pods_pending_warmup` cardinality note:** This gauge uses both `namespace` and `node` labels, so the maximum cardinality is `namespaces x nodes`. In large clusters (e.g., 100 namespaces, 500 nodes), this could produce up to 50,000 time series in theory. In practice, cardinality is much lower because:
-- Only active combinations (pods currently pending warmup) produce time series
+**`kube_booster_warmup_active_pods` cardinality note:** This gauge uses both `namespace` and `node` labels, so the maximum cardinality is `namespaces x nodes`. In large clusters (e.g., 100 namespaces, 500 nodes), this could produce up to 50,000 time series in theory. In practice, cardinality is much lower because:
+- Only active combinations (pods currently executing warmup) produce time series
 - Warmup activity is typically concentrated in a subset of namespaces
 - The `node` label provides valuable operational insight for identifying node-level warmup bottlenecks
 

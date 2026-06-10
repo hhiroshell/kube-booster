@@ -462,13 +462,13 @@ In this architecture, both webhook and controller run in a single deployment:
 - `kube_booster_warmup_total` (Counter) - Total warmup executions by namespace/result
 - `kube_booster_warmup_requests_total` (Counter) - Total HTTP requests sent
 - `kube_booster_warmup_duration_seconds` (Histogram) - Warmup duration
-- `kube_booster_pods_pending_warmup` (Gauge) - Pods currently pending warmup
+- `kube_booster_warmup_active_pods` (Gauge) - Pods currently executing warmup requests
 - `kube_booster_warmup_queue_wait_seconds` (Histogram) - Time pods wait for the warmup semaphore; uses custom buckets `[0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300]`
 
 **Key functions:**
 - `RecordWarmupResult(namespace, success, durationSeconds)` - Records outcome and duration
 - `RecordWarmupRequests(namespace, count)` - Records HTTP request count
-- `IncrementPodsPendingWarmup(namespace, node)` / `DecrementPodsPendingWarmup(namespace, node)` - Manages pending gauge
+- `IncrementActiveWarmupPods(namespace, node)` / `DecrementActiveWarmupPods(namespace, node)` - Manages active warmup pods gauge
 - `RecordWarmupQueueWait(namespace, seconds)` - Records semaphore queue wait time (also called on context cancellation to capture partial waits)
 
 See [OBSERVABILITY.md](OBSERVABILITY.md) for PromQL queries, alerting rules, and Grafana dashboard.
