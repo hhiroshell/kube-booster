@@ -198,8 +198,8 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 **Helper Functions:**
 - `RecordWarmupResult(namespace, success, durationSeconds)` - Records warmup outcome and duration
 - `RecordWarmupRequests(namespace, count)` - Records HTTP request count
-- `IncrementActiveWarmupPods(namespace, node)` - Increments active warmup pods gauge
-- `DecrementActiveWarmupPods(namespace, node)` - Decrements active warmup pods gauge
+- `IncrementWarmupActivePods(namespace, node)` - Increments warmup active pods gauge
+- `DecrementWarmupActivePods(namespace, node)` - Decrements warmup active pods gauge
 - `RecordWarmupQueueWait(namespace, seconds)` - Records semaphore wait time (also called on context cancellation)
 
 **Registration:**

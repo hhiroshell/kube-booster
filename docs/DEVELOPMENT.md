@@ -468,7 +468,7 @@ In this architecture, both webhook and controller run in a single deployment:
 **Key functions:**
 - `RecordWarmupResult(namespace, success, durationSeconds)` - Records outcome and duration
 - `RecordWarmupRequests(namespace, count)` - Records HTTP request count
-- `IncrementActiveWarmupPods(namespace, node)` / `DecrementActiveWarmupPods(namespace, node)` - Manages active warmup pods gauge
+- `IncrementWarmupActivePods(namespace, node)` / `DecrementWarmupActivePods(namespace, node)` - Manages warmup active pods gauge
 - `RecordWarmupQueueWait(namespace, seconds)` - Records semaphore queue wait time (also called on context cancellation to capture partial waits)
 
 See [OBSERVABILITY.md](OBSERVABILITY.md) for PromQL queries, alerting rules, and Grafana dashboard.
