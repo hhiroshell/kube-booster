@@ -25,6 +25,15 @@ const (
 
 	// DefaultEndpointPath is the default endpoint path for warmup requests
 	DefaultEndpointPath = "/"
+
+	// ProtocolHTTP selects HTTP warmup (default)
+	ProtocolHTTP = "http"
+
+	// ProtocolGRPC selects gRPC warmup
+	ProtocolGRPC = "grpc"
+
+	// DefaultGRPCPayload is the default JSON payload for gRPC warmup requests
+	DefaultGRPCPayload = "{}"
 )
 
 // Config holds the warmup configuration parsed from pod annotations
@@ -49,6 +58,15 @@ type Config struct {
 
 	// Port is the port to use for warmup requests
 	Port int
+
+	// Protocol is the warmup protocol: "http" (default) or "grpc"
+	Protocol string
+
+	// GRPCMethod is the fully-qualified gRPC method ("package.Service/Method"), required when Protocol == "grpc"
+	GRPCMethod string
+
+	// GRPCPayload is the JSON-encoded request payload for gRPC warmup, defaults to "{}"
+	GRPCPayload string
 }
 
 // ParseConfig parses warmup configuration from pod annotations
@@ -57,6 +75,8 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 		Endpoint:     DefaultEndpointPath,
 		RequestCount: DefaultRequestCount,
 		Timeout:      DefaultTimeout,
+		Protocol:     ProtocolHTTP,
+		GRPCPayload:  DefaultGRPCPayload,
 	}
 
 	if pod == nil {
@@ -101,6 +121,32 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 			config.Timeout = timeout
 		}
 
+		// Parse protocol
+		if protocol, ok := annotations[webhook.AnnotationWarmupProtocol]; ok && protocol != "" {
+			switch protocol {
+			case ProtocolHTTP, ProtocolGRPC:
+				config.Protocol = protocol
+			default:
+				return config, fmt.Errorf("invalid warmup-protocol value %q: must be %q or %q", protocol, ProtocolHTTP, ProtocolGRPC)
+			}
+		}
+
+		// Parse gRPC method
+		if method, ok := annotations[webhook.AnnotationWarmupGRPCMethod]; ok && method != "" {
+			config.GRPCMethod = method
+		}
+
+		// Parse gRPC payload
+		if payload, ok := annotations[webhook.AnnotationWarmupGRPCPayload]; ok && payload != "" {
+			config.GRPCPayload = payload
+		}
+
+		// Validate gRPC config
+		if config.Protocol == ProtocolGRPC && config.GRPCMethod == "" {
+			return config, fmt.Errorf("annotation %s is required when %s is %q",
+				webhook.AnnotationWarmupGRPCMethod, webhook.AnnotationWarmupProtocol, ProtocolGRPC)
+		}
+
 		// Parse port from annotation
 		if portStr, ok := annotations[webhook.AnnotationWarmupPort]; ok && portStr != "" {
 			port, err := strconv.Atoi(portStr)
@@ -134,6 +180,11 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 	// No containers or no ports found
 	return config, fmt.Errorf("cannot determine warmup port: no container ports found, please specify using annotation %s",
 		webhook.AnnotationWarmupPort)
+}
+
+// BuildGRPCAddress returns the "host:port" address for gRPC dial
+func (c *Config) BuildGRPCAddress() string {
+	return fmt.Sprintf("%s:%d", c.PodIP, c.Port)
 }
 
 // BuildEndpointURL constructs the full URL for warmup requests

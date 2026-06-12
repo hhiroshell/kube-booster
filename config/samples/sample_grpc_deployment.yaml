@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-grpc-app
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-grpc-app
+  template:
+    metadata:
+      labels:
+        app: my-grpc-app
+      annotations:
+        # Enable warmup using gRPC protocol
+        kube-booster.io/warmup: "enabled"
+        kube-booster.io/warmup-protocol: "grpc"
+
+        # Fully-qualified gRPC method to invoke during warmup.
+        # The server must expose this method via gRPC server reflection.
+        # Common choices: a health-check or a lightweight read-only RPC.
+        kube-booster.io/warmup-grpc-method: "grpc.health.v1.Health/Check"
+
+        # Optional: JSON payload for the request message (default: "{}")
+        kube-booster.io/warmup-grpc-payload: "{}"
+
+        # Standard warmup options (same as HTTP)
+        kube-booster.io/warmup-requests: "5"
+        kube-booster.io/warmup-timeout: "30s"
+        kube-booster.io/warmup-port: "50051"
+    spec:
+      containers:
+        - name: app
+          image: your-registry/my-grpc-app:latest
+          ports:
+            - containerPort: 50051
+              protocol: TCP
+          # The gRPC server must enable server reflection for kube-booster to
+          # discover the method descriptor dynamically.
+          # In Go: reflection.Register(grpcServer)
+          # In Java: ProtoReflectionService
+          # In Python: from grpc_reflection.v1alpha import reflection

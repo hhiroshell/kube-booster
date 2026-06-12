@@ -16,6 +16,15 @@ const (
 	// AnnotationWarmupPort is the annotation key to specify the warmup port
 	AnnotationWarmupPort = "kube-booster.io/warmup-port"
 
+	// AnnotationWarmupProtocol is the annotation key to specify the warmup protocol ("http" or "grpc")
+	AnnotationWarmupProtocol = "kube-booster.io/warmup-protocol"
+
+	// AnnotationWarmupGRPCMethod is the annotation key to specify the gRPC method ("package.Service/Method")
+	AnnotationWarmupGRPCMethod = "kube-booster.io/warmup-grpc-method"
+
+	// AnnotationWarmupGRPCPayload is the annotation key to specify the gRPC request payload (JSON)
+	AnnotationWarmupGRPCPayload = "kube-booster.io/warmup-grpc-payload"
+
 	// ReadinessGateName is the name of the readiness gate injected into pods
 	ReadinessGateName = "kube-booster.io/warmup-ready"
 
