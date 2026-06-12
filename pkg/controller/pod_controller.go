@@ -111,8 +111,8 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, ReasonWarmupStarted, "StartWarmup", "Starting warmup execution")
 
 	// Increment pending warmup gauge and ensure it's decremented when function returns
-	metrics.IncrementPodsPendingWarmup(pod.Namespace, pod.Spec.NodeName)
-	defer metrics.DecrementPodsPendingWarmup(pod.Namespace, pod.Spec.NodeName)
+	metrics.IncrementWarmupActivePods(pod.Namespace, pod.Spec.NodeName)
+	defer metrics.DecrementWarmupActivePods(pod.Namespace, pod.Spec.NodeName)
 
 	// Parse warmup configuration from pod annotations
 	config, err := warmup.ParseConfig(pod)
