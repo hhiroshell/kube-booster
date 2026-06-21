@@ -2,7 +2,6 @@ package warmup
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -148,8 +147,20 @@ func TestGRPCSender_Send_ConnectionReuse(t *testing.T) {
 		Payload: []byte(`{}`),
 	}
 
-	// Send multiple requests; connection and method descriptor should be reused.
-	for i := 0; i < 3; i++ {
+	// First Send establishes the connection; subsequent Sends must reuse it.
+	resp := sender.Send(context.Background(), target)
+	if resp.Error != nil {
+		t.Fatalf("Send() request 1 unexpected error: %v", resp.Error)
+	}
+	if resp.StatusCode != 200 {
+		t.Errorf("Send() request 1 StatusCode = %d, want 200", resp.StatusCode)
+	}
+	if sender.conn == nil {
+		t.Fatal("expected sender.conn to be non-nil after first Send")
+	}
+	firstConn := sender.conn
+
+	for i := 1; i < 3; i++ {
 		resp := sender.Send(context.Background(), target)
 		if resp.Error != nil {
 			t.Fatalf("Send() request %d unexpected error: %v", i+1, resp.Error)
@@ -157,6 +168,9 @@ func TestGRPCSender_Send_ConnectionReuse(t *testing.T) {
 		if resp.StatusCode != 200 {
 			t.Errorf("Send() request %d StatusCode = %d, want 200", i+1, resp.StatusCode)
 		}
+	}
+	if sender.conn != firstConn {
+		t.Error("expected same gRPC connection to be reused across Send calls")
 	}
 }
 
@@ -196,7 +210,7 @@ func TestParseGRPCMethod(t *testing.T) {
 		{"pkg.Svc/Method", "pkg.Svc", "Method", false},
 		{"NoSlash", "", "", true},
 		{"Service/", "", "", true},
-		{"/Method", "", "Method", false}, // service is empty string — lookupMethod will fail later
+		{"/Method", "", "", true}, // leading slash: idx==0, rejected early
 	}
 
 	for _, tt := range tests {
@@ -229,5 +243,3 @@ func TestGRPCSender_Close_NoConn(t *testing.T) {
 	}
 }
 
-// Ensure the test server address helper works.
-var _ = fmt.Sprintf // suppress unused import warning
