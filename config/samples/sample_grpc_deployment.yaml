@@ -19,7 +19,8 @@ spec:
 
         # Fully-qualified gRPC method to invoke during warmup.
         # The server must expose this method via gRPC server reflection.
-        # Common choices: a health-check or a lightweight read-only RPC.
+        # The health-check method is used here for demonstration (no custom proto required).
+        # In practice, use your application's actual warmup endpoint (e.g., a cache-preload RPC).
         kube-booster.io/warmup-grpc-method: "grpc.health.v1.Health/Check"
 
         # Optional: JSON payload for the request message (default: "{}")
