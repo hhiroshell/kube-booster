@@ -48,6 +48,8 @@ func TestParseConfig(t *testing.T) {
 				Endpoint:     DefaultEndpointPath,
 				RequestCount: DefaultRequestCount,
 				Timeout:      DefaultTimeout,
+				Protocol:     ProtocolHTTP,
+				GRPCPayload:  DefaultGRPCPayload,
 				Port:         8080,
 			},
 		},
@@ -78,6 +80,8 @@ func TestParseConfig(t *testing.T) {
 				Endpoint:     DefaultEndpointPath,
 				RequestCount: DefaultRequestCount,
 				Timeout:      DefaultTimeout,
+				Protocol:     ProtocolHTTP,
+				GRPCPayload:  DefaultGRPCPayload,
 				Port:         3000,
 			},
 		},
@@ -97,6 +101,8 @@ func TestParseConfig(t *testing.T) {
 				Endpoint:     "/api/warmup",
 				RequestCount: DefaultRequestCount,
 				Timeout:      DefaultTimeout,
+				Protocol:     ProtocolHTTP,
+				GRPCPayload:  DefaultGRPCPayload,
 				Port:         8080,
 			},
 		},
@@ -116,6 +122,8 @@ func TestParseConfig(t *testing.T) {
 				Endpoint:     DefaultEndpointPath,
 				RequestCount: 10,
 				Timeout:      DefaultTimeout,
+				Protocol:     ProtocolHTTP,
+				GRPCPayload:  DefaultGRPCPayload,
 				Port:         8080,
 			},
 		},
@@ -135,6 +143,8 @@ func TestParseConfig(t *testing.T) {
 				Endpoint:     DefaultEndpointPath,
 				RequestCount: DefaultRequestCount,
 				Timeout:      60 * time.Second,
+				Protocol:     ProtocolHTTP,
+				GRPCPayload:  DefaultGRPCPayload,
 				Port:         8080,
 			},
 		},
@@ -156,6 +166,8 @@ func TestParseConfig(t *testing.T) {
 				Endpoint:     "/health",
 				RequestCount: 5,
 				Timeout:      15 * time.Second,
+				Protocol:     ProtocolHTTP,
+				GRPCPayload:  DefaultGRPCPayload,
 				Port:         3000,
 			},
 		},
@@ -417,6 +429,39 @@ func TestParseConfig(t *testing.T) {
 			errContains: "is required when",
 		},
 		{
+			name: "grpc with invalid method format returns error",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupProtocol:   "grpc",
+						webhook.AnnotationWarmupGRPCMethod: "/Check",
+						webhook.AnnotationWarmupPort:       "9090",
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "invalid gRPC method",
+		},
+		{
+			name: "grpc with invalid json payload returns error",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupProtocol:    "grpc",
+						webhook.AnnotationWarmupGRPCMethod:  "my.service.v1.MyService/Warmup",
+						webhook.AnnotationWarmupGRPCPayload: "not-json",
+						webhook.AnnotationWarmupPort:        "9090",
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "not valid JSON",
+		},
+		{
 			name: "unknown protocol returns error",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -465,13 +510,13 @@ func TestParseConfig(t *testing.T) {
 			if config.Port != tt.wantConfig.Port {
 				t.Errorf("Port = %v, want %v", config.Port, tt.wantConfig.Port)
 			}
-			if tt.wantConfig.Protocol != "" && config.Protocol != tt.wantConfig.Protocol {
+			if config.Protocol != tt.wantConfig.Protocol {
 				t.Errorf("Protocol = %v, want %v", config.Protocol, tt.wantConfig.Protocol)
 			}
-			if tt.wantConfig.GRPCMethod != "" && config.GRPCMethod != tt.wantConfig.GRPCMethod {
+			if config.GRPCMethod != tt.wantConfig.GRPCMethod {
 				t.Errorf("GRPCMethod = %v, want %v", config.GRPCMethod, tt.wantConfig.GRPCMethod)
 			}
-			if tt.wantConfig.GRPCPayload != "" && config.GRPCPayload != tt.wantConfig.GRPCPayload {
+			if config.GRPCPayload != tt.wantConfig.GRPCPayload {
 				t.Errorf("GRPCPayload = %v, want %v", config.GRPCPayload, tt.wantConfig.GRPCPayload)
 			}
 		})
