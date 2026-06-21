@@ -1,6 +1,7 @@
 package warmup
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -133,11 +134,17 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 
 		// Parse gRPC method
 		if method, ok := annotations[webhook.AnnotationWarmupGRPCMethod]; ok && method != "" {
+			if _, _, err := parseGRPCMethod(method); err != nil {
+				return config, fmt.Errorf("invalid %s value: %w", webhook.AnnotationWarmupGRPCMethod, err)
+			}
 			config.GRPCMethod = method
 		}
 
 		// Parse gRPC payload
 		if payload, ok := annotations[webhook.AnnotationWarmupGRPCPayload]; ok && payload != "" {
+			if !json.Valid([]byte(payload)) {
+				return config, fmt.Errorf("invalid %s value: not valid JSON", webhook.AnnotationWarmupGRPCPayload)
+			}
 			config.GRPCPayload = payload
 		}
 
