@@ -22,12 +22,18 @@ import (
 )
 
 // GRPCSender executes a single gRPC unary warmup request using server reflection.
-// It dials lazily on the first Send call and reuses the connection and cached method
-// descriptor for subsequent calls.
+// It is designed as a single-use, per-Execute object: it dials lazily on the first
+// Send call and caches the connection, method descriptor, pre-allocated messages, and
+// method path for subsequent calls within the same warmup loop. There is no
+// cross-pod connection reuse; a new GRPCSender is created for each Execute call.
 type GRPCSender struct {
-	logger     logr.Logger
-	conn       *grpc.ClientConn
-	methodDesc protoreflect.MethodDescriptor // cached after first successful reflection lookup
+	logger           logr.Logger
+	conn             *grpc.ClientConn
+	methodDesc       protoreflect.MethodDescriptor // cached after first successful reflection lookup
+	methodPath       string                        // cached after first successful reflection lookup
+	reqMsg           *dynamicpb.Message            // cached after first successful reflection lookup
+	respMsg          *dynamicpb.Message            // cached after first successful reflection lookup
+	reflectionFailed bool                          // set on first failure; prevents re-attempting lookup
 }
 
 // NewGRPCSender creates a new GRPCSender.
@@ -57,31 +63,40 @@ func (s *GRPCSender) Send(ctx context.Context, target Target) *Response {
 		s.conn = conn
 	}
 
-	// Lazy reflection lookup: discover and cache the method descriptor.
+	// Lazy reflection lookup: discover and cache the method descriptor, pre-allocated
+	// messages, and method path. reflectionFailed prevents retrying a permanently-failing
+	// lookup on every subsequent Send call.
 	if s.methodDesc == nil {
+		if s.reflectionFailed {
+			return &Response{Error: fmt.Errorf("skipping: previous reflection lookup failed"), Duration: time.Since(start)}
+		}
 		serviceSymbol, methodName, err := parseGRPCMethod(target.Method)
 		if err != nil {
+			s.reflectionFailed = true
 			return &Response{Error: err, Duration: time.Since(start)}
 		}
 		md, err := resolveMethodDescriptor(ctx, s.conn, serviceSymbol, methodName)
 		if err != nil {
+			s.reflectionFailed = true
 			return &Response{Error: err, Duration: time.Since(start)}
 		}
 		s.methodDesc = md
+		s.methodPath = "/" + string(md.Parent().FullName()) + "/" + string(md.Name())
+		s.reqMsg = dynamicpb.NewMessage(md.Input())
+		s.respMsg = dynamicpb.NewMessage(md.Output())
 	}
 
-	// Build request message from JSON payload.
-	reqMsg := dynamicpb.NewMessage(s.methodDesc.Input())
+	// Build request message from JSON payload; reset cached message before each use.
+	proto.Reset(s.reqMsg)
 	if len(target.Payload) > 0 {
-		if err := protojson.Unmarshal(target.Payload, reqMsg); err != nil {
+		if err := protojson.Unmarshal(target.Payload, s.reqMsg); err != nil {
 			return &Response{Error: fmt.Errorf("invalid gRPC payload: %w", err), Duration: time.Since(start)}
 		}
 	}
 
-	// Invoke unary RPC.
-	respMsg := dynamicpb.NewMessage(s.methodDesc.Output())
-	methodPath := "/" + string(s.methodDesc.Parent().FullName()) + "/" + string(s.methodDesc.Name())
-	err := s.conn.Invoke(ctx, methodPath, reqMsg, respMsg)
+	// Invoke unary RPC; reset cached response message before each use.
+	proto.Reset(s.respMsg)
+	err := s.conn.Invoke(ctx, s.methodPath, s.reqMsg, s.respMsg)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -96,7 +111,7 @@ func (s *GRPCSender) Send(ctx context.Context, target Target) *Response {
 		return &Response{StatusCode: 500, Duration: duration}
 	}
 
-	body, err := protojson.Marshal(respMsg)
+	body, err := protojson.Marshal(s.respMsg)
 	if err != nil {
 		s.logger.V(2).Info("failed to marshal gRPC response body", "error", err)
 	}
@@ -114,7 +129,7 @@ func (s *GRPCSender) Close() error {
 // parseGRPCMethod splits "package.Service/Method" into ("package.Service", "Method").
 func parseGRPCMethod(fullMethod string) (serviceSymbol, methodName string, err error) {
 	idx := strings.LastIndex(fullMethod, "/")
-	if idx < 0 || idx == len(fullMethod)-1 {
+	if idx < 0 || idx == 0 || idx == len(fullMethod)-1 {
 		return "", "", fmt.Errorf("invalid gRPC method %q: expected format \"package.Service/Method\"", fullMethod)
 	}
 	return fullMethod[:idx], fullMethod[idx+1:], nil
@@ -192,7 +207,19 @@ func fetchFileDescriptorBytes(ctx context.Context, conn *grpc.ClientConn, servic
 // buildFileSet constructs a protoregistry.Files from serialized FileDescriptorProto bytes.
 // Dependencies are resolved from the received set first, then from the global registry
 // (for well-known types like google/protobuf/timestamp.proto).
+// maxReflectionResponseBytes caps the total serialized FileDescriptorProto bytes
+// accepted from a pod's reflection endpoint to prevent memory exhaustion (CWE-400).
+const maxReflectionResponseBytes = 4 << 20 // 4 MiB
+
 func buildFileSet(fdBytes [][]byte) (*protoregistry.Files, error) {
+	var total int
+	for _, b := range fdBytes {
+		total += len(b)
+	}
+	if total > maxReflectionResponseBytes {
+		return nil, fmt.Errorf("reflection response too large (%d bytes, limit %d)", total, maxReflectionResponseBytes)
+	}
+
 	protos := make([]*descriptorpb.FileDescriptorProto, 0, len(fdBytes))
 	for _, b := range fdBytes {
 		fdp := &descriptorpb.FileDescriptorProto{}
@@ -229,16 +256,19 @@ func buildFileSet(fdBytes [][]byte) (*protoregistry.Files, error) {
 				return err
 			}
 		}
+		// Skip if already registered in the local set (can occur when a file appears
+		// both as a direct entry and as a transitive dependency).
+		if _, err := files.FindFileByPath(fdp.GetName()); err == nil {
+			registered[name] = true
+			return nil
+		}
 		resolver := &fileSetResolver{local: files}
 		fd, err := protodesc.NewFile(fdp, resolver)
 		if err != nil {
 			return fmt.Errorf("failed to build descriptor for %q: %w", name, err)
 		}
 		if err := files.RegisterFile(fd); err != nil {
-			// Duplicate registration is harmless (can occur with shared transitive deps).
-			if !strings.Contains(err.Error(), "already registered") {
-				return fmt.Errorf("failed to register file descriptor %q: %w", name, err)
-			}
+			return fmt.Errorf("failed to register file descriptor %q: %w", name, err)
 		}
 		registered[name] = true
 		return nil
