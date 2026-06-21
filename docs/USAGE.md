@@ -136,10 +136,13 @@ spec:
 | Annotation | Description | Default |
 |------------|-------------|---------|
 | `kube-booster.io/warmup` | Enable/disable warmup (`enabled`/`disabled`) | `disabled` |
+| `kube-booster.io/warmup-protocol` | Warmup protocol: `http` (default) or `grpc` | `http` |
 | `kube-booster.io/warmup-endpoint` | HTTP endpoint path for warmup requests | `/` |
 | `kube-booster.io/warmup-requests` | Number of warmup requests to send (1-12000) | `3` |
 | `kube-booster.io/warmup-timeout` | Maximum timeout for warmup (1s-5m, e.g., `30s`, `1m`) | `30s` |
 | `kube-booster.io/warmup-port` | Container port for warmup requests | Auto-detected |
+| `kube-booster.io/warmup-grpc-method` | Fully-qualified gRPC method (`package.Service/Method`). Required when `warmup-protocol` is `grpc` | — |
+| `kube-booster.io/warmup-grpc-payload` | JSON-encoded request payload for gRPC warmup | `{}` |
 
 ### Example: Complete Application
 
@@ -225,6 +228,29 @@ spec:
 - **Port auto-detection**: If your container has exactly one port, kube-booster will automatically detect it. Specify `warmup-port` explicitly when containers have multiple ports.
 - **Request execution**: Requests are sent back-to-back as fast as possible (ASAP model). The `warmup-timeout` sets the maximum wall-clock time for the entire warmup phase. Warmup typically completes much faster than the timeout.
 - **Custom headers**: All warmup requests include `User-Agent: kube-booster/1.0` and `X-Warmup-Request: true` headers.
+
+### gRPC Warmup
+
+kube-booster supports gRPC warmup in addition to HTTP. Set `warmup-protocol: grpc` and provide a fully-qualified gRPC method name:
+
+```yaml
+annotations:
+  kube-booster.io/warmup: "enabled"
+  kube-booster.io/warmup-protocol: "grpc"
+  # Format: "package.Service/Method"
+  kube-booster.io/warmup-grpc-method: "grpc.health.v1.Health/Check"
+  # Optional: JSON request payload (default: "{}")
+  kube-booster.io/warmup-grpc-payload: "{}"
+  kube-booster.io/warmup-port: "50051"
+```
+
+See [`config/samples/sample_grpc_deployment.yaml`](../config/samples/sample_grpc_deployment.yaml) for a complete example.
+
+**Requirements and constraints:**
+
+- **Server reflection required**: The gRPC server must enable [server reflection](https://github.com/grpc/grpc/blob/master/doc/server-reflection.md) so kube-booster can discover method descriptors at warmup time without compiled proto files. In Go: `reflection.Register(grpcServer)`. In Java: `ProtoReflectionService`. In Python: `from grpc_reflection.v1alpha import reflection`.
+- **Unary RPCs only**: Only unary (non-streaming) RPCs are supported. Client-streaming, server-streaming, and bidirectional-streaming methods are rejected with a `WarmupFailed` event. Use a unary RPC such as a health-check or a lightweight read-only call.
+- **Plaintext transport**: gRPC warmup connections use plaintext (`insecure.NewCredentials()`). All warmup traffic between the controller and pod is unencrypted. Pod-to-pod traffic within a cluster is commonly treated as trusted, but if your security policy requires in-cluster encryption, apply a NetworkPolicy restricting controller-to-pod traffic on the warmup port while optional TLS support is tracked separately.
 
 ### Controller Flags
 
