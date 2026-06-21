@@ -19,10 +19,11 @@ type Target struct {
 	// Method is the HTTP verb (e.g. "GET") or gRPC method ("package.Service/Method").
 	Method string
 
-	// Headers contains additional request headers (HTTP only).
+	// Headers contains additional request headers. Ignored by GRPCSender.
 	Headers map[string]string
 
-	// Payload is the request body; JSON-encoded for gRPC, empty for HTTP GET.
+	// Payload is the request body; JSON-encoded for gRPC warmup, unused for HTTP GET.
+	// Ignored by HTTPSender.
 	Payload []byte
 }
 
