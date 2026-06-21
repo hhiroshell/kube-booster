@@ -2,6 +2,7 @@ package warmup
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
 	"time"
@@ -71,31 +72,29 @@ func (e *WarmupExecutor) Execute(ctx context.Context, config *Config) *Result {
 			Method:  config.GRPCMethod,
 			Payload: []byte(config.GRPCPayload),
 		}
-		e.logger.V(1).Info("starting gRPC warmup",
-			"pod", config.PodName,
-			"namespace", config.PodNamespace,
-			"address", target.Address,
-			"method", target.Method,
-			"requestCount", config.RequestCount,
-			"timeout", config.Timeout)
-	default:
+	case ProtocolHTTP:
 		sender = &HTTPSender{client: e.client, logger: e.logger}
-		endpoint := config.BuildEndpointURL()
 		target = Target{
-			Address: endpoint,
+			Address: config.BuildEndpointURL(),
 			Method:  http.MethodGet,
 			Headers: map[string]string{
 				"User-Agent":       "kube-booster/1.0",
 				"X-Warmup-Request": "true",
 			},
 		}
-		e.logger.V(1).Info("starting HTTP warmup",
-			"pod", config.PodName,
-			"namespace", config.PodNamespace,
-			"endpoint", endpoint,
-			"requestCount", config.RequestCount,
-			"timeout", config.Timeout)
+	default:
+		result.Error = fmt.Errorf("unsupported warmup protocol %q", config.Protocol)
+		result.Message = fmt.Sprintf("cannot execute warmup: unsupported protocol %q", config.Protocol)
+		return result
 	}
+	e.logger.V(1).Info("starting warmup",
+		"pod", config.PodName,
+		"namespace", config.PodNamespace,
+		"protocol", config.Protocol,
+		"address", target.Address,
+		"method", target.Method,
+		"requestCount", config.RequestCount,
+		"timeout", config.Timeout)
 	defer sender.Close() //nolint:errcheck
 
 	// Create context with timeout.
@@ -113,7 +112,8 @@ func (e *WarmupExecutor) Execute(ctx context.Context, config *Config) *Result {
 		}
 
 		if err := e.rateLimiter.Wait(warmupCtx); err != nil {
-			// Context cancelled or deadline exceeded before token was available.
+			// Count remaining un-attempted requests as failed so the result message and
+			// the fail-open decision in the controller reflect the full RequestCount picture.
 			failCount += config.RequestCount - successCount - failCount
 			break
 		}
