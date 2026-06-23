@@ -232,12 +232,18 @@ kube-booster/
 │   │   ├── metrics.go            # Prometheus metric definitions & helpers
 │   │   └── metrics_test.go
 │   ├── warmup/
-│   │   ├── config.go             # Configuration parsing
+│   │   ├── config.go             # Configuration parsing from annotations
 │   │   ├── config_test.go
-│   │   ├── http_executor.go      # HTTP executor implementation (ASAP model)
-│   │   ├── http_executor_test.go
+│   │   ├── grpc_sender.go        # GRPCSender: gRPC warmup via server reflection
+│   │   ├── grpc_sender_test.go
+│   │   ├── http_sender.go        # HTTPSender: single HTTP GET request
+│   │   ├── http_sender_test.go
+│   │   ├── mock.go               # MockSender for testing
 │   │   ├── rate_limiter.go       # Nil-safe RPS rate limiter wrapper
-│   │   └── result.go             # Warmup result structure
+│   │   ├── result.go             # Warmup result structure
+│   │   ├── sender.go             # Sender interface and Target/Response types
+│   │   ├── warmup_executor.go    # WarmupExecutor: dispatches to HTTP or gRPC sender
+│   │   └── warmup_executor_test.go
 │   └── webhook/
 │       ├── constants.go          # Shared constants
 │       ├── pod_mutator.go        # Webhook handler
@@ -255,6 +261,7 @@ kube-booster/
 │   │   └── daemonset.yaml        # Controller DaemonSet (node-local)
 │   ├── samples/                 # Sample applications
 │   │   ├── sample_deployment.yaml
+│   │   ├── sample_grpc_deployment.yaml  # gRPC warmup example
 │   │   └── grafana-dashboard.json  # Sample Grafana dashboard
 │   └── kustomization.yaml       # Kustomize config
 ├── hack/
@@ -419,37 +426,56 @@ In this architecture, both webhook and controller run in a single deployment:
 
 #### Warmup Package (pkg/warmup/)
 
+**sender.go**
+- `Sender` interface: `Send(ctx, target) *Response` and `Close() error`
+- `Target` struct: `Address`, `Method`, `Headers`, `Payload`
+- `Response` struct: `StatusCode`, `Duration`, `Body`, `Error`
+
+**warmup_executor.go**
+- `Executor` interface for warmup implementations
+- `WarmupExecutor` dispatches to the appropriate `Sender` based on `Config.Protocol` (HTTP or gRPC)
+- Fires requests back-to-back (ASAP model); `Config.Timeout` acts as wall-clock cap
+- Rate-limited via optional `RequestRateLimiter` (`WithRateLimiter` option)
+- Computes latency percentiles (P50/P99) via sorted-slice approach
+- Context-aware cancellation support
+
+**http_sender.go**
+- `HTTPSender` sends a single HTTP GET request
+- Per-request timeout: 10s via `http.Client.Timeout`
+- Custom headers: `User-Agent: kube-booster/1.0`, `X-Warmup-Request: true`
+
+**grpc_sender.go**
+- `GRPCSender` sends a single gRPC unary call using dynamic proto reflection
+- Lazy-dials connection on first `Send`; reuses connection across calls
+- Caches method descriptor and request/response message objects after first successful reflection
+- Uses `reflectionFailed` sentinel to avoid retrying permanently-failed reflection
+- Caps total `FileDescriptorProto` bytes at `maxReflectionResponseBytes` (4 MiB) to bound memory
+- Registers file descriptors with `protoregistry` using `FindFileByPath` pre-check to avoid duplicate errors
+
 **config.go**
 - `Config` struct holds parsed warmup configuration
 - `ParseConfig(pod)` parses annotations into Config:
-  - `kube-booster.io/warmup-endpoint` → Endpoint path (default: `/`)
+  - `kube-booster.io/warmup-protocol` → Protocol (`http` or `grpc`, default: `http`)
+  - `kube-booster.io/warmup-endpoint` → HTTP endpoint path (default: `/`)
   - `kube-booster.io/warmup-requests` → Request count (default: `3`)
   - `kube-booster.io/warmup-timeout` → Maximum timeout (default: `30s`)
   - `kube-booster.io/warmup-port` → Port (auto-detected if possible)
+  - `kube-booster.io/warmup-grpc-method` → gRPC method (`package.Service/Method`), required for gRPC
+  - `kube-booster.io/warmup-grpc-payload` → JSON payload for gRPC request (default: `{}`)
+- Validates `warmup-grpc-method` format and `warmup-grpc-payload` JSON validity at parse time
 - Auto-detects port from container spec (single container, single port)
-- Validates numeric values and duration format
-- `BuildEndpointURL()` constructs full URL for requests
-
-**http_executor.go**
-- `Executor` interface for warmup implementations
-- `HTTPExecutor` sends requests back-to-back using `net/http` (ASAP model)
-- `Config.Timeout` acts as maximum wall-clock cap
-- Per-request timeout: 10s via `http.Client.Timeout`
-- Adds custom headers:
-  - `User-Agent: kube-booster/1.0`
-  - `X-Warmup-Request: true`
-- Context-aware cancellation support
-- Computes latency percentiles (P50/P99) via sorted-slice approach
+- `BuildEndpointURL()` constructs full URL for HTTP requests
+- `BuildGRPCAddress()` constructs `host:port` for gRPC dial
 
 **result.go**
 - `Result` struct tracks warmup outcome:
   - `Success` - Whether warmup met success threshold
-  - `RequestCount` - Completed requests
-  - `FailedCount` - Failed requests
+  - `RequestsCompleted` - Successful requests
+  - `RequestsFailed` - Failed requests
   - `LatencyP50` / `LatencyP99` - Latency percentiles
-  - `SuccessRate` - Percentage of successful requests
+  - `TotalDuration` - Wall-clock time for the entire warmup phase
   - `Message` - Human-readable summary
-- `String()` method for formatted logging
+- `BuildMessage()` produces the event/log message string
 
 #### Metrics Package (pkg/metrics/)
 
@@ -507,7 +533,7 @@ Check containers ready
     ↓
 Acquire semaphore slot (if --max-concurrent-warmups > 0)
     ↓
-Execute warmup requests via HTTPExecutor (rate-limited if --max-warmup-rps > 0)
+Execute warmup requests via WarmupExecutor (HTTP or gRPC, rate-limited if --max-warmup-rps > 0)
     ↓
 Update pod condition
     ↓
@@ -826,9 +852,9 @@ kubectl cluster-info --context kind-kube-booster-dev
 
 HTTP warmup execution is complete. See [CLAUDE.md](../CLAUDE.md) for the complete roadmap. Future areas:
 
-1. **gRPC Support**
-   - Add gRPC warmup capability
-   - Protocol detection from annotations
+1. ~~**gRPC Support**~~ ✅ Implemented
+   - ~~Add gRPC warmup capability~~ ✅ `GRPCSender` with server reflection
+   - ~~Protocol detection from annotations~~ ✅ `kube-booster.io/warmup-protocol`
 
 2. **Observability Enhancements**
    - ~~Prometheus metrics export~~ ✅ Implemented
