@@ -242,4 +242,3 @@ func TestGRPCSender_Close_NoConn(t *testing.T) {
 		t.Errorf("Close() on unconnected sender returned error: %v", err)
 	}
 }
-
