@@ -37,6 +37,7 @@ spec:
           # so kube-booster can discover the method descriptor at warmup time.
           # Source: hack/grpc-demo-server/
           image: ghcr.io/hhiroshell/kube-booster/grpc-demo:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - name: grpc
               containerPort: 50051
