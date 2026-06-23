@@ -130,7 +130,7 @@ func main() {
 	rateLimiter := warmup.NewRequestRateLimiter(float64(maxWarmupRPS))
 
 	// Create warmup executor
-	warmupExecutor := warmup.NewHTTPExecutor(ctrl.Log.WithName("warmup"),
+	warmupExecutor := warmup.NewWarmupExecutor(ctrl.Log.WithName("warmup"),
 		warmup.WithRateLimiter(rateLimiter))
 
 	// Create semaphore (nil if maxConcurrentWarmups <= 0, meaning unlimited)

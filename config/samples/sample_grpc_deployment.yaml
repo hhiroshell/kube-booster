@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grpc-demo
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grpc-demo
+  template:
+    metadata:
+      labels:
+        app: grpc-demo
+      annotations:
+        # Enable warmup using gRPC protocol.
+        kube-booster.io/warmup: "enabled"
+        kube-booster.io/warmup-protocol: "grpc"
+
+        # Fully-qualified gRPC method to invoke during warmup.
+        # The server must expose this method via gRPC server reflection.
+        # In practice, use your application's actual warmup endpoint (e.g., a cache-preload RPC).
+        kube-booster.io/warmup-grpc-method: "grpc.health.v1.Health/Check"
+
+        # Optional: JSON payload for the request message (default: "{}")
+        kube-booster.io/warmup-grpc-payload: "{}"
+
+        # Standard warmup options (same as HTTP).
+        kube-booster.io/warmup-requests: "5"
+        kube-booster.io/warmup-timeout: "30s"
+        kube-booster.io/warmup-port: "50051"
+    spec:
+      containers:
+        - name: grpc-demo
+          # kube-booster's own minimal gRPC demo server.
+          # Registers grpc.health.v1.Health and enables server reflection
+          # so kube-booster can discover the method descriptor at warmup time.
+          # Source: hack/grpc-demo-server/
+          image: ghcr.io/hhiroshell/kube-booster/grpc-demo:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP

@@ -2,7 +2,7 @@ package warmup
 
 import (
 	"context"
-	"io"
+	"fmt"
 	"net/http"
 	"slices"
 	"time"
@@ -15,28 +15,29 @@ type Executor interface {
 	Execute(ctx context.Context, config *Config) *Result
 }
 
-// HTTPExecutorOption is a functional option for HTTPExecutor.
-type HTTPExecutorOption func(*HTTPExecutor)
+// WarmupExecutorOption is a functional option for WarmupExecutor.
+type WarmupExecutorOption func(*WarmupExecutor)
 
 // WithRateLimiter sets the rate limiter on the executor.
 // Passing nil (e.g., when --max-warmup-rps <= 0) is safe and disables rate limiting —
 // equivalent to not calling this option at all.
-func WithRateLimiter(rl *RequestRateLimiter) HTTPExecutorOption {
-	return func(e *HTTPExecutor) {
+func WithRateLimiter(rl *RequestRateLimiter) WarmupExecutorOption {
+	return func(e *WarmupExecutor) {
 		e.rateLimiter = rl
 	}
 }
 
-// HTTPExecutor fires warmup requests back-to-back (ASAP model) using net/http.
-type HTTPExecutor struct {
+// WarmupExecutor fires warmup requests back-to-back (ASAP model), dispatching to the
+// appropriate Sender based on the configured protocol (HTTP or gRPC).
+type WarmupExecutor struct {
 	logger      logr.Logger
 	client      *http.Client
 	rateLimiter *RequestRateLimiter // nil = unlimited
 }
 
-// NewHTTPExecutor creates a new HTTPExecutor
-func NewHTTPExecutor(logger logr.Logger, opts ...HTTPExecutorOption) *HTTPExecutor {
-	e := &HTTPExecutor{
+// NewWarmupExecutor creates a new WarmupExecutor.
+func NewWarmupExecutor(logger logr.Logger, opts ...WarmupExecutorOption) *WarmupExecutor {
+	e := &WarmupExecutor{
 		logger: logger,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
@@ -48,28 +49,55 @@ func NewHTTPExecutor(logger logr.Logger, opts ...HTTPExecutorOption) *HTTPExecut
 	return e
 }
 
-// Execute performs warmup requests back-to-back as fast as possible
-func (e *HTTPExecutor) Execute(ctx context.Context, config *Config) *Result {
+// Execute performs warmup requests back-to-back as fast as possible.
+func (e *WarmupExecutor) Execute(ctx context.Context, config *Config) *Result {
 	result := &Result{}
 
-	// Validate config
 	if config.PodIP == "" {
 		result.Error = ErrNoPodIP
 		result.Message = "cannot execute warmup: pod IP not set"
 		return result
 	}
 
-	// Build endpoint URL
-	endpoint := config.BuildEndpointURL()
-
+	// Choose sender and build target based on protocol.
+	var (
+		sender Sender
+		target Target
+	)
+	switch config.Protocol {
+	case ProtocolGRPC:
+		sender = NewGRPCSender(e.logger)
+		target = Target{
+			Address: config.BuildGRPCAddress(),
+			Method:  config.GRPCMethod,
+			Payload: []byte(config.GRPCPayload),
+		}
+	case ProtocolHTTP:
+		sender = &HTTPSender{client: e.client, logger: e.logger}
+		target = Target{
+			Address: config.BuildEndpointURL(),
+			Method:  http.MethodGet,
+			Headers: map[string]string{
+				"User-Agent":       "kube-booster/1.0",
+				"X-Warmup-Request": "true",
+			},
+		}
+	default:
+		result.Error = fmt.Errorf("unsupported warmup protocol %q", config.Protocol)
+		result.Message = fmt.Sprintf("cannot execute warmup: unsupported protocol %q", config.Protocol)
+		return result
+	}
 	e.logger.V(1).Info("starting warmup",
 		"pod", config.PodName,
 		"namespace", config.PodNamespace,
-		"endpoint", endpoint,
+		"protocol", config.Protocol,
+		"address", target.Address,
+		"method", target.Method,
 		"requestCount", config.RequestCount,
 		"timeout", config.Timeout)
+	defer sender.Close() //nolint:errcheck
 
-	// Create context with timeout
+	// Create context with timeout.
 	warmupCtx, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
 
@@ -84,44 +112,25 @@ func (e *HTTPExecutor) Execute(ctx context.Context, config *Config) *Result {
 		}
 
 		if err := e.rateLimiter.Wait(warmupCtx); err != nil {
-			// Context cancelled or deadline exceeded before token was available.
-			// Count remaining un-attempted requests as failed so the result
-			// message and fail-open decision reflect the full picture.
+			// Count remaining un-attempted requests as failed so the result message and
+			// the fail-open decision in the controller reflect the full RequestCount picture.
 			failCount += config.RequestCount - successCount - failCount
 			break
 		}
 
-		reqStart := time.Now()
-		req, err := http.NewRequestWithContext(warmupCtx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			failCount++
-			continue
-		}
-		req.Header.Set("User-Agent", "kube-booster/1.0")
-		req.Header.Set("X-Warmup-Request", "true")
+		resp := sender.Send(warmupCtx, target)
 
-		resp, err := e.client.Do(req)
-		latency := time.Since(reqStart)
-
-		if err != nil {
+		if resp.Error != nil {
 			failCount++
-			// If context was cancelled/timed out, stop sending requests
 			if warmupCtx.Err() != nil {
 				break
 			}
 			continue
 		}
-		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-			e.logger.V(2).Info("failed to drain response body", "error", err)
-		}
-		if err := resp.Body.Close(); err != nil {
-			e.logger.V(2).Info("failed to close response body", "error", err)
-		}
 
-		// Record latency for all completed HTTP round-trips regardless of status code.
-		// Even 4xx/5xx responses exercise the application's request handling path
-		// (class loading, cache warming, JIT compilation), which is the goal of warmup.
-		latencies = append(latencies, latency)
+		// Record latency for all completed round-trips regardless of status code.
+		// Even error responses exercise the application's request handling path.
+		latencies = append(latencies, resp.Duration)
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 			successCount++
@@ -132,12 +141,10 @@ func (e *HTTPExecutor) Execute(ctx context.Context, config *Config) *Result {
 
 	totalDuration := time.Since(start)
 
-	// Record context error if warmup was cancelled or timed out
 	if warmupCtx.Err() != nil {
 		result.Error = warmupCtx.Err()
 	}
 
-	// Calculate percentiles
 	p50, p99 := calculatePercentiles(latencies)
 
 	result.RequestsCompleted = successCount
@@ -151,6 +158,7 @@ func (e *HTTPExecutor) Execute(ctx context.Context, config *Config) *Result {
 	e.logger.V(1).Info("warmup completed",
 		"pod", config.PodName,
 		"namespace", config.PodNamespace,
+		"protocol", config.Protocol,
 		"success", result.Success,
 		"requestsCompleted", successCount,
 		"requestsFailed", failCount,
@@ -201,5 +209,5 @@ func (e *WarmupError) Error() string {
 	return e.msg
 }
 
-// Ensure HTTPExecutor implements Executor
-var _ Executor = (*HTTPExecutor)(nil)
+// Ensure WarmupExecutor implements Executor
+var _ Executor = (*WarmupExecutor)(nil)

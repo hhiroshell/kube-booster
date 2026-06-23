@@ -11,7 +11,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func TestHTTPExecutor_Execute(t *testing.T) {
+func TestWarmupExecutor_Execute_HTTP(t *testing.T) {
 	logger := ctrl.Log.WithName("test")
 
 	tests := []struct {
@@ -27,6 +27,8 @@ func TestHTTPExecutor_Execute(t *testing.T) {
 				Endpoint:     "/warmup",
 				RequestCount: 3,
 				Timeout:      5 * time.Second,
+				Protocol:     ProtocolHTTP,
+				GRPCPayload:  DefaultGRPCPayload,
 				PodName:      "test-pod",
 				PodNamespace: "default",
 			},
@@ -47,6 +49,8 @@ func TestHTTPExecutor_Execute(t *testing.T) {
 				Endpoint:     "/warmup",
 				RequestCount: 3,
 				Timeout:      5 * time.Second,
+				Protocol:     ProtocolHTTP,
+				GRPCPayload:  DefaultGRPCPayload,
 				PodName:      "test-pod",
 				PodNamespace: "default",
 			},
@@ -61,7 +65,9 @@ func TestHTTPExecutor_Execute(t *testing.T) {
 				Endpoint:     "/warmup",
 				RequestCount: 3,
 				Timeout:      5 * time.Second,
-				PodIP:        "", // No IP set
+				Protocol:     ProtocolHTTP,
+				GRPCPayload:  DefaultGRPCPayload,
+				PodIP:        "",
 				PodName:      "test-pod",
 				PodNamespace: "default",
 			},
@@ -77,7 +83,6 @@ func TestHTTPExecutor_Execute(t *testing.T) {
 				server = httptest.NewServer(tt.serverHandler)
 				defer server.Close()
 
-				// Extract host and port from test server
 				addr := server.Listener.Addr().String()
 				parts := strings.Split(addr, ":")
 				if len(parts) == 2 {
@@ -86,7 +91,7 @@ func TestHTTPExecutor_Execute(t *testing.T) {
 				}
 			}
 
-			executor := NewHTTPExecutor(logger)
+			executor := NewWarmupExecutor(logger)
 			result := executor.Execute(context.Background(), tt.config)
 
 			if tt.wantErrContain != "" {
@@ -112,10 +117,9 @@ func TestHTTPExecutor_Execute(t *testing.T) {
 	}
 }
 
-func TestHTTPExecutor_Execute_ContextCancellation(t *testing.T) {
+func TestWarmupExecutor_Execute_ContextCancellation(t *testing.T) {
 	logger := ctrl.Log.WithName("test")
 
-	// Create a slow server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(2 * time.Second)
 		w.WriteHeader(http.StatusOK)
@@ -128,13 +132,15 @@ func TestHTTPExecutor_Execute_ContextCancellation(t *testing.T) {
 		Endpoint:     "/",
 		RequestCount: 10,
 		Timeout:      30 * time.Second,
+		Protocol:     ProtocolHTTP,
+		GRPCPayload:  DefaultGRPCPayload,
 		PodIP:        parts[0],
 		Port:         parsePort(parts[1]),
 		PodName:      "test-pod",
 		PodNamespace: "default",
 	}
 
-	executor := NewHTTPExecutor(logger)
+	executor := NewWarmupExecutor(logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -149,11 +155,11 @@ func TestHTTPExecutor_Execute_ContextCancellation(t *testing.T) {
 	}
 }
 
-func TestHTTPExecutor_Execute_MetricsCollection(t *testing.T) {
+func TestWarmupExecutor_Execute_MetricsCollection(t *testing.T) {
 	logger := ctrl.Log.WithName("test")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(10 * time.Millisecond) // Small delay for latency measurement
+		time.Sleep(10 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -164,36 +170,90 @@ func TestHTTPExecutor_Execute_MetricsCollection(t *testing.T) {
 		Endpoint:     "/",
 		RequestCount: 5,
 		Timeout:      10 * time.Second,
+		Protocol:     ProtocolHTTP,
+		GRPCPayload:  DefaultGRPCPayload,
 		PodIP:        parts[0],
 		Port:         parsePort(parts[1]),
 		PodName:      "test-pod",
 		PodNamespace: "default",
 	}
 
-	executor := NewHTTPExecutor(logger)
+	executor := NewWarmupExecutor(logger)
 	result := executor.Execute(context.Background(), config)
 
 	if !result.Success {
 		t.Errorf("Execute() Success = false, want true. Message: %s", result.Message)
 	}
-
 	if result.RequestsCompleted < 1 {
 		t.Errorf("Execute() RequestsCompleted = %d, want > 0", result.RequestsCompleted)
 	}
-
 	if result.TotalDuration == 0 {
 		t.Error("Execute() TotalDuration = 0, want > 0")
 	}
-
-	// P50 and P99 should be set
 	if result.LatencyP50 == 0 {
 		t.Error("Execute() LatencyP50 = 0, want > 0")
 	}
-
-	// Message should be populated
 	if result.Message == "" {
 		t.Error("Execute() Message is empty")
 	}
+}
+
+func TestWarmupExecutor_Execute_GRPC(t *testing.T) {
+	logger := ctrl.Log.WithName("test")
+
+	// Happy path: gRPC server with reflection enabled.
+	addr, stop := startTestGRPCServer(t, true)
+	defer stop()
+
+	parts := strings.Split(addr, ":")
+	config := &Config{
+		RequestCount: 3,
+		Timeout:      10 * time.Second,
+		Protocol:     ProtocolGRPC,
+		GRPCMethod:   "grpc.health.v1.Health/Check",
+		GRPCPayload:  DefaultGRPCPayload,
+		PodIP:        parts[0],
+		Port:         parsePort(parts[1]),
+		PodName:      "test-pod",
+		PodNamespace: "default",
+	}
+
+	executor := NewWarmupExecutor(logger)
+	result := executor.Execute(context.Background(), config)
+
+	if !result.Success {
+		t.Errorf("Execute() gRPC Success = false, want true. Message: %s, Error: %v",
+			result.Message, result.Error)
+	}
+}
+
+func TestWarmupExecutor_Execute_GRPC_NoReflection(t *testing.T) {
+	logger := ctrl.Log.WithName("test")
+
+	// Fail-open path: gRPC server without reflection — warmup fails but pod still marked ready.
+	addr, stop := startTestGRPCServer(t, false)
+	defer stop()
+
+	parts := strings.Split(addr, ":")
+	config := &Config{
+		RequestCount: 3,
+		Timeout:      5 * time.Second,
+		Protocol:     ProtocolGRPC,
+		GRPCMethod:   "grpc.health.v1.Health/Check",
+		GRPCPayload:  DefaultGRPCPayload,
+		PodIP:        parts[0],
+		Port:         parsePort(parts[1]),
+		PodName:      "test-pod",
+		PodNamespace: "default",
+	}
+
+	executor := NewWarmupExecutor(logger)
+	result := executor.Execute(context.Background(), config)
+
+	if result.Success {
+		t.Errorf("Execute() gRPC (no reflection) Success = true, want false")
+	}
+	// No panic: executor applied fail-open (no crash, result returned).
 }
 
 func TestCalculatePercentiles(t *testing.T) {

@@ -133,32 +133,54 @@ sigs.k8s.io/controller-runtime/pkg/client/fake
 #### Warmup Package (`pkg/warmup/`)
 
 **Files Created:**
+- `sender.go` - `Sender` interface; `Target` and `Response` types
+- `warmup_executor.go` - `Executor` interface and `WarmupExecutor` (dispatches HTTP or gRPC)
+- `warmup_executor_test.go` - Unit tests for executor
+- `http_sender.go` - `HTTPSender`: single HTTP GET request
+- `http_sender_test.go` - Unit tests for HTTP sender
+- `grpc_sender.go` - `GRPCSender`: gRPC warmup via server reflection
+- `grpc_sender_test.go` - Unit tests for gRPC sender
+- `mock.go` - `MockSender` for testing
 - `config.go` - Configuration parsing from pod annotations
 - `config_test.go` - Unit tests for config parsing
-- `http_executor.go` - Executor interface and HTTPExecutor implementation (ASAP model)
-- `http_executor_test.go` - Unit tests for executor
+- `rate_limiter.go` - Nil-safe RPS rate limiter wrapper
 - `result.go` - Result structure for warmup outcomes
 
 **Configuration (`config.go`):**
 - `Config` struct holds parsed warmup configuration
 - `ParseConfig(pod)` extracts settings from annotations:
-  - `kube-booster.io/warmup-endpoint` → Endpoint path (default: `/`)
+  - `kube-booster.io/warmup-protocol` → Protocol (`http` or `grpc`, default: `http`)
+  - `kube-booster.io/warmup-endpoint` → HTTP endpoint path (default: `/`)
   - `kube-booster.io/warmup-requests` → Request count (default: `3`)
   - `kube-booster.io/warmup-timeout` → Maximum timeout (default: `30s`)
   - `kube-booster.io/warmup-port` → Container port (auto-detected if single container/port)
-- Validates numeric values and duration format
+  - `kube-booster.io/warmup-grpc-method` → gRPC method (`package.Service/Method`)
+  - `kube-booster.io/warmup-grpc-payload` → JSON payload for gRPC request (default: `{}`)
+- Validates gRPC method format and payload JSON validity at parse time
 - Auto-detects port from container spec when applicable
 
-**Executor (`http_executor.go`):**
+**Executor (`warmup_executor.go`):**
 - `Executor` interface defines `Execute(ctx, config)` method
-- `HTTPExecutor` implementation using `net/http` with back-to-back requests (ASAP model)
+- `WarmupExecutor` dispatches to `HTTPSender` or `GRPCSender` based on `Config.Protocol`
 - Features:
-  - Requests fire back-to-back as fast as possible
+  - Requests fire back-to-back as fast as possible (ASAP model)
   - `Config.Timeout` acts as maximum wall-clock cap
-  - Per-request timeout: 10s via `http.Client.Timeout`
-  - Custom headers: `User-Agent: kube-booster/1.0`, `X-Warmup-Request: true`
+  - Rate-limited via optional `RequestRateLimiter`
   - Context-aware cancellation support
   - Latency percentiles (P50/P99) via sorted-slice approach
+
+**HTTP Sender (`http_sender.go`):**
+- `HTTPSender` issues a single HTTP GET request
+- Per-request timeout: 10s via `http.Client.Timeout`
+- Custom headers: `User-Agent: kube-booster/1.0`, `X-Warmup-Request: true`
+
+**gRPC Sender (`grpc_sender.go`):**
+- `GRPCSender` invokes a single gRPC unary call using dynamic proto reflection
+- Lazy-dials connection on first Send; reuses it across calls
+- Caches method descriptor and message objects after first successful reflection
+- `reflectionFailed` sentinel prevents retrying permanently-failed reflection
+- Caps `FileDescriptorProto` response bytes at 4 MiB (`maxReflectionResponseBytes`)
+- Uses `protoregistry.FindFileByPath` pre-check to avoid duplicate-registration errors
 
 **Result (`result.go`):**
 - `Result` struct tracks warmup outcome:
@@ -351,6 +373,23 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ✅ RBAC configured for `events.k8s.io` API group
 ✅ Unit tests for event recording
 
+## Success Criteria - gRPC Warmup
+
+✅ `warmup-protocol: grpc` annotation selects gRPC sender
+✅ `warmup-grpc-method` parsed and validated (`package.Service/Method` format, no leading slash)
+✅ `warmup-grpc-payload` validated as JSON at parse time (default: `{}`)
+✅ gRPC method descriptor resolved via server reflection (`reflectionpb`)
+✅ Dynamic proto messages constructed via `dynamicpb` without compiled proto files
+✅ Method descriptor and messages cached on `GRPCSender`; `proto.Reset` before each use
+✅ `reflectionFailed` sentinel prevents re-running reflection after permanent failure
+✅ Unary-only enforcement: streaming methods rejected with descriptive error
+✅ `maxReflectionResponseBytes` (4 MiB) caps deserialized `FileDescriptorProto` payload
+✅ `FindFileByPath` pre-check avoids duplicate-registration panic in `protoregistry`
+✅ gRPC connection reused across `Send` calls on the same `GRPCSender` instance
+✅ Plaintext transport documented; TLS tracked in issue #60
+✅ `config/samples/sample_grpc_deployment.yaml` example added
+✅ Unit tests: success, reflection-unavailable, invalid method, method-not-found, connection reuse, context cancellation, close-no-conn, `parseGRPCMethod` table
+
 ## Success Criteria - Prometheus Metrics
 
 ✅ Prometheus metrics registered via controller-runtime metrics registry
@@ -367,26 +406,31 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 
 ## What's NOT Implemented (Future Scope)
 
-- gRPC warmup support
+- ~~gRPC warmup support~~ ✅ Implemented (unary RPCs via server reflection, plaintext)
 - ~~Prometheus metrics export~~ ✅ Implemented
 - ~~Kubernetes events for warmup results~~ ✅ Implemented
 - CRD support for complex warmup scenarios (`WarmupConfig`)
 - Multiple sequential warmup endpoints
-- Custom warmup request bodies
 - Retry logic with exponential backoff (currently single attempt)
+- Optional TLS for gRPC warmup (tracked in issue #60)
+- Cross-pod gRPC connection pooling / Sender factory (tracked in issue #61)
+- `PermanentError` type for early loop exit on non-recoverable transport errors (tracked in issue #62)
+- Config protocol sub-structs (`HTTPConfig`/`GRPCConfig`) (tracked in issue #63)
+- Webhook-level annotation validation for gRPC annotations (tracked in issue #64)
+- Version-aware `User-Agent` via build-time variable (tracked in issue #65)
+- Configurable gRPC reflection response size limit (tracked in issue #66)
 
 ## File Summary
 
 **Go Code:**
 - 5 packages: webhook, controller, warmup, metrics, main
-- 12 Go source files (6 test files)
-- ~1300 lines of code (excluding tests)
-- ~960 lines of test code
+- 19 Go source files (9 test files)
+- warmup package: `sender.go`, `warmup_executor.go`, `http_sender.go`, `grpc_sender.go`, `mock.go`, `config.go`, `rate_limiter.go`, `result.go`
 
 **Kubernetes Manifests:**
-- 9 YAML files
+- 10 YAML files (added `config/samples/sample_grpc_deployment.yaml`)
 - Complete deployment configuration
-- Sample application
+- Sample applications (HTTP and gRPC)
 
 **Documentation:**
 - 4 markdown files (CLAUDE.md, USAGE.md, IMPLEMENTATION_SUMMARY.md, OBSERVABILITY.md)
@@ -397,7 +441,7 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ## Next Steps
 
 Future enhancements:
-1. **gRPC Support**: Add gRPC warmup request capability
+1. ~~**gRPC Support**: Add gRPC warmup request capability~~ ✅ Implemented
 2. ~~**Prometheus Metrics**: Export warmup metrics for monitoring dashboards~~ ✅ Implemented
 3. ~~**Kubernetes Events**: Record warmup results as pod events~~ ✅ Implemented
 4. **WarmupConfig CRD**: Support complex warmup scenarios with multiple endpoints
@@ -405,8 +449,10 @@ Future enhancements:
 6. **Custom Request Bodies**: Support POST requests with custom payloads
 7. **Health Check Integration**: Optionally use readiness probe path as default endpoint
 8. **Distributed Tracing**: Add trace context to warmup requests
-9. **Webhook Config Validation**: Validate warmup annotation values at admission time
+9. **Webhook Config Validation**: Validate warmup annotation values at admission time (issue #64)
 10. **Parallel Warmup Execution**: Increase controller-runtime reconcile concurrency for parallel warmup processing
+11. **gRPC TLS**: Optional TLS for gRPC warmup connections (issue #60)
+12. **gRPC Connection Pooling**: Cross-pod connection reuse via Sender factory refactoring (issue #61)
 
 ## Testing Recommendations
 
@@ -433,7 +479,8 @@ Future enhancements:
 ## Known Limitations
 
 - Single replica deployment (no HA yet)
-- HTTP only (no gRPC support)
+- gRPC warmup: unary RPCs only (no streaming), plaintext transport only (TLS tracked in issue #60)
+- gRPC warmup requires server reflection to be enabled on the target pod
 - Self-signed certificates for local testing only
 - No automated certificate rotation
 - No CRD for advanced warmup configurations
@@ -446,6 +493,7 @@ The implementation is complete and ready for testing. The system provides:
 
 ✓ End-to-end warmup functionality via annotations
 ✓ HTTP warmup requests using net/http (ASAP model)
+✓ gRPC warmup via server reflection (unary RPCs, dynamic proto, plaintext)
 ✓ Fail-open behavior ensuring pod availability
 ✓ Kubernetes Events for warmup lifecycle visibility
 ✓ Prometheus metrics for monitoring and alerting

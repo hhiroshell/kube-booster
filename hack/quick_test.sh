@@ -7,7 +7,9 @@ set -e
 
 NAMESPACE="default"
 TEST_POD="test-warmup-pod"
+TEST_POD_GRPC="test-warmup-pod-grpc"
 CONTROLLER_NAMESPACE="kube-system"
+GRPC_DEMO_IMAGE="ghcr.io/hhiroshell/kube-booster/grpc-demo:latest"
 
 echo "=========================================="
 echo "kube-booster Quick Test"
@@ -51,7 +53,8 @@ fi
 # Clean up any previous test pods
 echo ""
 echo "2. Cleaning up previous test pods..."
-kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup ${TEST_POD}-ratelimit --ignore-not-found=true --wait=false &> /dev/null || true
+kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup ${TEST_POD}-ratelimit ${TEST_POD_GRPC} \
+    --ignore-not-found=true --wait=false &> /dev/null || true
 sleep 2
 
 # Test webhook injection with warmup-enabled pod
@@ -188,9 +191,107 @@ kubectl get events --field-selector involvedObject.name=${TEST_POD},source=kube-
     echo "     $line"
 done || echo "     (no events found)"
 
+# Test gRPC warmup
+echo ""
+echo "9. Testing gRPC warmup..."
+echo "   Note: requires ${GRPC_DEMO_IMAGE} to be available in the cluster."
+echo "   For kind: kind load docker-image ${GRPC_DEMO_IMAGE} --name <cluster-name>"
+
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${TEST_POD_GRPC}
+  namespace: ${NAMESPACE}
+  annotations:
+    kube-booster.io/warmup: "enabled"
+    kube-booster.io/warmup-protocol: "grpc"
+    kube-booster.io/warmup-grpc-method: "grpc.health.v1.Health/Check"
+    kube-booster.io/warmup-grpc-payload: "{}"
+    kube-booster.io/warmup-requests: "3"
+    kube-booster.io/warmup-timeout: "30s"
+    kube-booster.io/warmup-port: "50051"
+spec:
+  containers:
+  - name: grpc-demo
+    image: ${GRPC_DEMO_IMAGE}
+    imagePullPolicy: IfNotPresent
+    ports:
+    - containerPort: 50051
+EOF
+
+sleep 2
+
+# Check readiness gate injection
+GRPC_READINESS_GATE=$(kubectl get pod ${TEST_POD_GRPC} -o jsonpath='{.spec.readinessGates[0].conditionType}')
+if [ "$GRPC_READINESS_GATE" == "kube-booster.io/warmup-ready" ]; then
+    echo "   ✓ Readiness gate injected for gRPC pod"
+else
+    echo "   ✗ Readiness gate not found on gRPC pod"
+    kubectl delete pod ${TEST_POD_GRPC} --ignore-not-found=true
+    exit 1
+fi
+
+echo "   Waiting for grpc-demo container to be ready..."
+kubectl wait --for=condition=ContainersReady pod/${TEST_POD_GRPC} --timeout=60s || {
+    echo "   ✗ grpc-demo container did not become ready (is the image loaded in the cluster?)"
+    kubectl delete pod ${TEST_POD_GRPC} --ignore-not-found=true
+    exit 1
+}
+
+echo "   Waiting for gRPC warmup to complete..."
+for i in $(seq 1 30); do
+    GRPC_EVENTS=$(kubectl get events --field-selector involvedObject.name=${TEST_POD_GRPC} \
+        -o jsonpath='{range .items[*]}{.reason}{" "}{end}' 2>/dev/null || true)
+    if echo "$GRPC_EVENTS" | grep -q "WarmupCompleted\|WarmupFailed"; then
+        break
+    fi
+    sleep 1
+done
+
+GRPC_CONDITION=$(kubectl get pod ${TEST_POD_GRPC} \
+    -o jsonpath='{.status.conditions[?(@.type=="kube-booster.io/warmup-ready")].status}')
+GRPC_CONDITION_MSG=$(kubectl get pod ${TEST_POD_GRPC} \
+    -o jsonpath='{.status.conditions[?(@.type=="kube-booster.io/warmup-ready")].message}')
+GRPC_POD_READY=$(kubectl get pod ${TEST_POD_GRPC} \
+    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
+
+if [ "$GRPC_CONDITION" == "True" ]; then
+    echo "   ✓ gRPC warmup condition set to True"
+    echo "   Message: ${GRPC_CONDITION_MSG:0:80}..."
+else
+    echo "   ⚠ gRPC warmup condition not set (status: ${GRPC_CONDITION})"
+fi
+
+if [ "$GRPC_POD_READY" == "True" ]; then
+    echo "   ✓ gRPC pod is READY"
+else
+    echo "   ⚠ gRPC pod not READY yet (status: ${GRPC_POD_READY})"
+fi
+
+GRPC_COMPLETED=$(echo "$GRPC_EVENTS" | grep -o "WarmupCompleted" || true)
+GRPC_FAILED=$(echo "$GRPC_EVENTS" | grep -o "WarmupFailed" || true)
+
+if [ -n "$GRPC_COMPLETED" ]; then
+    echo "   ✓ WarmupCompleted event found for gRPC pod"
+elif [ -n "$GRPC_FAILED" ]; then
+    echo "   ⚠ WarmupFailed event found for gRPC pod (fail-open behavior)"
+else
+    echo "   ⚠ No WarmupCompleted/WarmupFailed event found for gRPC pod"
+fi
+
+echo ""
+echo "   Events from kube-booster-controller (gRPC pod):"
+kubectl get events --field-selector involvedObject.name=${TEST_POD_GRPC},source=kube-booster-controller \
+    --no-headers 2>/dev/null | while read line; do
+    echo "     $line"
+done || echo "     (no events found)"
+
+kubectl delete pod ${TEST_POD_GRPC} --ignore-not-found=true --wait=false &>/dev/null || true
+
 # Test concurrency control and rate limiting
 echo ""
-echo "9. Testing concurrency control and rate limiting..."
+echo "10. Testing concurrency control and rate limiting..."
 echo "   Creating test pod with 200 warmup requests (200 req @ default 100 RPS = ≥2s)..."
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
@@ -248,7 +349,7 @@ kubectl delete pod ${TEST_POD}-ratelimit --ignore-not-found=true --wait=false &>
 
 # Test without annotation
 echo ""
-echo "10. Testing pod without annotation..."
+echo "11. Testing pod without annotation..."
 kubectl run ${TEST_POD}-no-warmup --image=nginx:1.25 --restart=Never
 
 sleep 2
@@ -264,8 +365,9 @@ fi
 
 # Cleanup
 echo ""
-echo "11. Cleaning up test pods..."
-kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup ${TEST_POD}-ratelimit --ignore-not-found=true
+echo "12. Cleaning up test pods..."
+kubectl delete pod ${TEST_POD} ${TEST_POD}-no-warmup ${TEST_POD}-ratelimit ${TEST_POD_GRPC} \
+    --ignore-not-found=true
 echo "   ✓ Cleanup complete"
 
 echo ""
@@ -279,6 +381,7 @@ echo "Warmup features verified:"
 echo "  - Readiness gate injection via mutating webhook"
 echo "  - Warmup configuration via annotations"
 echo "  - HTTP warmup request execution"
+echo "  - gRPC warmup request execution (grpc.health.v1.Health/Check via server reflection)"
 echo "  - Pod condition update after warmup"
 echo "  - Kubernetes Events for warmup lifecycle (WarmupQueued, WarmupStarted, WarmupCompleted/Failed, ConditionUpdated)"
 echo "  - Semaphore concurrency control (--max-concurrent-warmups)"
