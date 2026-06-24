@@ -414,6 +414,28 @@ func TestParseConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "warmup-config annotation parsed",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						webhook.AnnotationWarmupConfig: "my-app-warmup",
+						webhook.AnnotationWarmupPort:   "8080",
+					},
+				},
+			},
+			wantConfig: &Config{
+				Endpoint:         DefaultEndpointPath,
+				RequestCount:     DefaultRequestCount,
+				Timeout:          DefaultTimeout,
+				Protocol:         ProtocolHTTP,
+				GRPCPayload:      DefaultGRPCPayload,
+				Port:             8080,
+				WarmupConfigName: "my-app-warmup",
+			},
+		},
+		{
 			name: "grpc without method returns error",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -518,6 +540,9 @@ func TestParseConfig(t *testing.T) {
 			}
 			if config.GRPCPayload != tt.wantConfig.GRPCPayload {
 				t.Errorf("GRPCPayload = %v, want %v", config.GRPCPayload, tt.wantConfig.GRPCPayload)
+			}
+			if config.WarmupConfigName != tt.wantConfig.WarmupConfigName {
+				t.Errorf("WarmupConfigName = %v, want %v", config.WarmupConfigName, tt.wantConfig.WarmupConfigName)
 			}
 		})
 	}

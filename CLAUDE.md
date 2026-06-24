@@ -87,44 +87,52 @@ spec:
 **Opt-out:**
 Pods without the `kube-booster.io/warmup: "enabled"` annotation are not affected by the controller.
 
-#### Future: CRD for Complex Configuration
+#### WarmupConfig CRD for Complex Configuration ✅ Implemented
 
-For advanced warmup scenarios, a `WarmupConfig` CRD will be introduced:
+For advanced warmup scenarios requiring multiple sequential steps, response chaining, or mixed HTTP/gRPC calls, use the `WarmupConfig` CRD:
 ```yaml
 apiVersion: kube-booster.io/v1alpha1
 kind: WarmupConfig
 metadata:
   name: my-app-warmup
 spec:
-  selector:
-    matchLabels:
-      app: my-app
-  warmup:
-    requests:
-      - endpoint: /api/cache/load
-        method: POST
-        body: '{"action": "preload"}'
-      - endpoint: /api/health
-        method: GET
-        expectedStatus: 200
-    successThreshold: 3
-    timeout: 60s
+  timeout: "120s"
+  steps:
+    - name: load-cache
+      requests:
+        - endpoint: /api/cache/load
+          method: POST
+          body: '{"action": "preload"}'
+          extract:
+            token: "$.session.token"     # extract from JSON response
+    - name: verify-health
+      requests:
+        - endpoint: /api/health
+          method: GET
+          expectedStatus: 200
+          headers:
+            Authorization: "Bearer {{token}}"  # inject extracted value
 ```
 
 Reference it via annotation:
 ```yaml
 annotations:
+  kube-booster.io/warmup: "enabled"
   kube-booster.io/warmup-config: "my-app-warmup"
+  kube-booster.io/warmup-port: "8080"
 ```
+
+See `docs/USAGE.md` → "WarmupConfig CRD" section and `config/samples/sample_warmup_config.yaml` for full examples.
 
 ### Key Components
 
 - `cmd/controller/`: Controller entry point with command-line flags
+- `pkg/api/v1alpha1/`: WarmupConfig CRD Go types (hand-written, no code-gen)
 - `pkg/controller/`: Core controller logic for watching pods and managing readiness gates
-- `pkg/warmup/`: Warmup request execution logic (HTTP/gRPC)
+- `pkg/warmup/`: Warmup request execution logic (HTTP/gRPC, single-endpoint and scenario)
 - `pkg/webhook/`: Mutating webhook for injecting readiness gates
 - `pkg/metrics/`: Prometheus metrics definitions and recording helpers
-- `config/crd/`: Custom Resource Definitions (Phase 2)
+- `config/crd/`: WarmupConfig CustomResourceDefinition manifest
 - `config/rbac/`: RBAC roles and bindings for controller permissions
 - `config/webhook/`: Webhook configuration and certificates
 - `config/samples/`: Example configurations and Grafana dashboard

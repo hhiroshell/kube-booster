@@ -1,0 +1,52 @@
+apiVersion: kube-booster.io/v1alpha1
+kind: WarmupConfig
+metadata:
+  name: my-app-warmup
+  namespace: default
+spec:
+  # Overall time budget across all steps. Default: 120s.
+  timeout: "120s"
+
+  steps:
+    # Step 1: load the in-memory cache by POSTing a preload request.
+    # The response contains a session token that subsequent steps reuse.
+    - name: load-cache
+      timeout: "30s"
+      requests:
+        - name: preload
+          protocol: http
+          endpoint: /api/cache/load
+          method: POST
+          headers:
+            Content-Type: application/json
+          body: '{"action":"preload"}'
+          # Extract the session token from the JSON response body.
+          # Supported syntax: $.key and $.a.b (no arrays or filter expressions).
+          extract:
+            token: "$.session.token"
+
+    # Step 2: prime the recommendation engine, passing the token from step 1.
+    # {{token}} is replaced with the extracted value before the request is sent.
+    - name: prime-recommendations
+      timeout: "30s"
+      requests:
+        - name: prime
+          protocol: http
+          endpoint: /api/recs/prime
+          method: POST
+          headers:
+            Content-Type: application/json
+            Authorization: "Bearer {{token}}"
+          body: '{"userId":"warmup"}'
+
+    # Step 3: verify the application is healthy before marking the pod ready.
+    - name: health-check
+      timeout: "10s"
+      requests:
+        - name: health
+          protocol: http
+          endpoint: /health
+          method: GET
+          expectedStatus: 200
+          # Send 3 requests so the JVM (or runtime) JIT-compiles the hot path.
+          count: 3

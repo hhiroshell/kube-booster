@@ -143,6 +143,7 @@ spec:
 | `kube-booster.io/warmup-port` | Container port for warmup requests | Auto-detected |
 | `kube-booster.io/warmup-grpc-method` | Fully-qualified gRPC method (`package.Service/Method`). Required when `warmup-protocol` is `grpc` | — |
 | `kube-booster.io/warmup-grpc-payload` | JSON-encoded request payload for gRPC warmup | `{}` |
+| `kube-booster.io/warmup-config` | Name of a `WarmupConfig` CR in the same namespace. When set, uses scenario-based warmup instead of single-endpoint warmup. See [WarmupConfig CRD](#warmupconfig-crd) | — |
 
 ### Example: Complete Application
 
@@ -251,6 +252,90 @@ See [`config/samples/sample_grpc_deployment.yaml`](../config/samples/sample_grpc
 - **Server reflection required**: The gRPC server must enable [server reflection](https://github.com/grpc/grpc/blob/master/doc/server-reflection.md) so kube-booster can discover method descriptors at warmup time without compiled proto files. In Go: `reflection.Register(grpcServer)`. In Java: `ProtoReflectionService`. In Python: `from grpc_reflection.v1alpha import reflection`.
 - **Unary RPCs only**: Only unary (non-streaming) RPCs are supported. Client-streaming, server-streaming, and bidirectional-streaming methods are rejected with a `WarmupFailed` event. Use a unary RPC such as a health-check or a lightweight read-only call.
 - **Plaintext transport**: gRPC warmup connections use plaintext (`insecure.NewCredentials()`). All warmup traffic between the controller and pod is unencrypted. Pod-to-pod traffic within a cluster is commonly treated as trusted, but if your security policy requires in-cluster encryption, apply a NetworkPolicy restricting controller-to-pod traffic on the warmup port while optional TLS support is tracked separately.
+
+### WarmupConfig CRD
+
+For applications that need multi-step warmup (e.g. load a cache, prime a recommendation engine, then verify health), use the `WarmupConfig` custom resource. Steps are executed sequentially; within a step, requests are executed in order.
+
+**Key features:**
+- **Multi-step warmup** with per-step and overall timeouts
+- **Response chaining**: extract JSON values from one response and inject them into the next request via `{{varName}}` interpolation
+- **Arbitrary HTTP methods** (GET, POST, PUT, etc.) with request bodies
+- **gRPC steps** mixed with HTTP steps in the same scenario
+- **Repeat count** per request to hit JIT compile thresholds
+
+**Usage:**
+
+1. Create a `WarmupConfig` CR in the same namespace as your pods:
+
+```yaml
+apiVersion: kube-booster.io/v1alpha1
+kind: WarmupConfig
+metadata:
+  name: my-app-warmup
+  namespace: default
+spec:
+  timeout: "120s"   # overall budget across all steps
+  steps:
+    - name: load-cache
+      timeout: "30s"
+      requests:
+        - name: preload
+          endpoint: /api/cache/load
+          method: POST
+          headers:
+            Content-Type: application/json
+          body: '{"action":"preload"}'
+          # Extract session.token from the JSON response body.
+          # Supported JSONPath syntax: $.key and $.a.b (no arrays or filters).
+          extract:
+            token: "$.session.token"
+
+    - name: prime-recommendations
+      requests:
+        - endpoint: /api/recs/prime
+          method: POST
+          headers:
+            Authorization: "Bearer {{token}}"  # interpolated from step 1
+          body: '{"userId":"warmup"}'
+
+    - name: health-check
+      requests:
+        - endpoint: /health
+          expectedStatus: 200
+          count: 3   # send 3 requests to trigger JIT compilation
+```
+
+2. Reference the `WarmupConfig` from your pod template:
+
+```yaml
+annotations:
+  kube-booster.io/warmup: "enabled"
+  kube-booster.io/warmup-config: "my-app-warmup"
+  kube-booster.io/warmup-port: "8080"    # still required
+```
+
+See [`config/samples/sample_warmup_config.yaml`](../config/samples/sample_warmup_config.yaml) and [`config/samples/sample_scenario_deployment.yaml`](../config/samples/sample_scenario_deployment.yaml) for complete examples.
+
+**`WarmupRequest` fields:**
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `name` | Optional label for log output | — |
+| `protocol` | `http` or `grpc` | inherited from pod annotation or `http` |
+| `endpoint` | URL path for HTTP requests | `/` |
+| `method` | HTTP verb | `GET` |
+| `headers` | HTTP request headers; supports `{{varName}}` | — |
+| `body` | HTTP request body; supports `{{varName}}` | — |
+| `grpcMethod` | Fully-qualified gRPC method (`pkg.Service/Method`) | — |
+| `grpcPayload` | JSON gRPC request message; supports `{{varName}}` | `{}` |
+| `count` | Number of times to repeat this request | `1` |
+| `extract` | `varName → $.json.path` mapping; extracted from last response body | — |
+| `expectedStatus` | HTTP status code that counts as success; `0` means 200–399 | `0` |
+
+**JSONPath extraction limitations:** Only simple dot-paths are supported (`$.key`, `$.a.b`). Array indexing and filter expressions are not supported.
+
+**Fail-open behavior:** If a step times out or a request fails, the scenario continues. The final result is fail-open just like single-endpoint warmup — the pod is marked READY regardless. If the `WarmupConfig` CR is not found, the controller falls back to annotation-based warmup with a `WarmupFailed` warning event.
 
 ### Controller Flags
 

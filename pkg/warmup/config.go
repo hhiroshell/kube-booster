@@ -68,6 +68,11 @@ type Config struct {
 
 	// GRPCPayload is the JSON-encoded request payload for gRPC warmup, defaults to "{}"
 	GRPCPayload string
+
+	// WarmupConfigName is the name of a WarmupConfig CR in the pod's namespace.
+	// When non-empty, the controller uses scenario-based warmup instead of the
+	// single-endpoint annotation-based warmup.
+	WarmupConfigName string
 }
 
 // ParseConfig parses warmup configuration from pod annotations
@@ -152,6 +157,11 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 		if config.Protocol == ProtocolGRPC && config.GRPCMethod == "" {
 			return config, fmt.Errorf("annotation %s is required when %s is %q",
 				webhook.AnnotationWarmupGRPCMethod, webhook.AnnotationWarmupProtocol, ProtocolGRPC)
+		}
+
+		// Parse WarmupConfig reference
+		if name, ok := annotations[webhook.AnnotationWarmupConfig]; ok && name != "" {
+			config.WarmupConfigName = name
 		}
 
 		// Parse port from annotation

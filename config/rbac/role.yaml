@@ -41,3 +41,11 @@ rules:
   - get
   - create
   - update
+- apiGroups:
+  - kube-booster.io
+  resources:
+  - warmupconfigs
+  verbs:
+  - get
+  - list
+  - watch
