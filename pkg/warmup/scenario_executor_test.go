@@ -320,10 +320,14 @@ func TestScenarioExecutor_StepTimeout(t *testing.T) {
 	}
 
 	result := e.ExecuteScenario(context.Background(), config, spec)
-	// Step 1 timed out (counted as failed), step 2 should succeed
-	_ = step1Done
+	// Step 1 timed out; the scenario should continue and execute step 2.
 	if !step2Done {
 		t.Error("step 2 should have executed after step 1 timed out")
+	}
+	// Give the step 1 handler goroutine a moment to finish cleanup after cancellation.
+	time.Sleep(10 * time.Millisecond)
+	if !step1Done {
+		t.Error("step 1 handler should have exited after step context was cancelled")
 	}
 	_ = result // fail-open: scenario continues even when a step times out
 }
