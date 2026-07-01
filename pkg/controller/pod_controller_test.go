@@ -705,7 +705,7 @@ func TestPodReconciler_ScenarioDispatch(t *testing.T) {
 		}
 	})
 
-	t.Run("WarmupConfig not found falls back to WarmupExecutor", func(t *testing.T) {
+	t.Run("WarmupConfig not found fails open without calling WarmupExecutor", func(t *testing.T) {
 		pod := makeReadyPod("test-pod", "default", map[string]string{
 			webhook.AnnotationWarmupConfig: "does-not-exist",
 		})
@@ -738,6 +738,9 @@ func TestPodReconciler_ScenarioDispatch(t *testing.T) {
 		if mockScenario.Called {
 			t.Error("ScenarioExecutor should NOT be called when WarmupConfig is missing")
 		}
+		if mockExec.Called {
+			t.Error("WarmupExecutor should NOT be called as fallback when WarmupConfig is missing")
+		}
 
 		// Expect a Warning event mentioning the missing WarmupConfig name.
 		// FakeRecorder format: "EventType Reason Message" (action is not recorded).
@@ -755,7 +758,7 @@ func TestPodReconciler_ScenarioDispatch(t *testing.T) {
 		}
 	})
 
-	t.Run("no WarmupConfigName uses WarmupExecutor as before", func(t *testing.T) {
+	t.Run("annotation-based warmup: uses WarmupExecutor when no WarmupConfigName is set", func(t *testing.T) {
 		pod := makeReadyPod("test-pod", "default", nil)
 
 		mockScenario := &warmup.MockScenarioExecutor{}

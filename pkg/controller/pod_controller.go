@@ -36,7 +36,7 @@ type PodReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
 	WarmupExecutor   warmup.Executor
-	ScenarioExecutor warmup.ScenarioExecutorIface // nil = CRD-based warmup disabled
+	ScenarioExecutor warmup.ScenarioExecutor // nil = CRD-based warmup disabled
 	Recorder         events.EventRecorder
 	WarmupSemaphore  *semaphore.Weighted // nil = unlimited concurrency
 }
@@ -157,16 +157,21 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	recordMetrics := true
 	if config.WarmupConfigName != "" && r.ScenarioExecutor != nil {
 		warmupCfg := &v1alpha1.WarmupConfig{}
-		if err := r.Get(ctx, types.NamespacedName{
+		if err := r.Get(warmupCtx, types.NamespacedName{
 			Name:      config.WarmupConfigName,
 			Namespace: pod.Namespace,
 		}, warmupCfg); err != nil {
-			// WarmupConfig not found: log a warning and fall back to annotation-based warmup.
-			logger.Error(err, "WarmupConfig not found, falling back to annotation-based warmup",
+			// WarmupConfig not found: emit a warning and fail the warmup (fail-open means pod
+			// is still marked READY by the condition update below, consistent with other failures).
+			logger.Error(err, "WarmupConfig not found, failing open",
 				"warmupConfig", config.WarmupConfigName)
 			r.Recorder.Eventf(pod, nil, corev1.EventTypeWarning, ReasonWarmupFailed, "LookupWarmupConfig",
-				"WarmupConfig %q not found: %v (fail-open, using annotation-based warmup)", config.WarmupConfigName, err)
-			result = r.WarmupExecutor.Execute(warmupCtx, config)
+				"WarmupConfig %q not found: %v", config.WarmupConfigName, err)
+			result = &warmup.Result{
+				Success: false,
+				Error:   err,
+				Message: fmt.Sprintf("WarmupConfig %q not found", config.WarmupConfigName),
+			}
 		} else {
 			result = r.ScenarioExecutor.ExecuteScenario(warmupCtx, config, &warmupCfg.Spec)
 		}

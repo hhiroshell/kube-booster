@@ -9,10 +9,12 @@ import (
 // MockExecutor is a mock implementation of Executor for testing
 type MockExecutor struct {
 	Result *Result
+	Called bool
 }
 
-// Execute returns the configured Result or a default success result
+// Execute records the call and returns the configured Result or a default success result.
 func (m *MockExecutor) Execute(ctx context.Context, config *Config) *Result {
+	m.Called = true
 	if m.Result != nil {
 		return m.Result
 	}
@@ -26,7 +28,7 @@ func (m *MockExecutor) Execute(ctx context.Context, config *Config) *Result {
 // Ensure MockExecutor implements Executor
 var _ Executor = (*MockExecutor)(nil)
 
-// MockScenarioExecutor is a mock implementation of ScenarioExecutorIface for testing.
+// MockScenarioExecutor is a mock implementation of ScenarioExecutor for testing.
 type MockScenarioExecutor struct {
 	Result *Result
 	Called bool
@@ -45,5 +47,5 @@ func (m *MockScenarioExecutor) ExecuteScenario(_ context.Context, _ *Config, _ *
 	}
 }
 
-// Ensure MockScenarioExecutor implements ScenarioExecutorIface.
-var _ ScenarioExecutorIface = (*MockScenarioExecutor)(nil)
+// Ensure MockScenarioExecutor implements ScenarioExecutor.
+var _ ScenarioExecutor = (*MockScenarioExecutor)(nil)
