@@ -16,39 +16,40 @@ import (
 const (
 	defaultScenarioTimeout = 120 * time.Second
 	defaultStepTimeout     = 30 * time.Second
+	maxScenarioTimeout     = 5 * time.Minute
 )
 
-// ScenarioExecutorIface is implemented by ScenarioExecutor and any test doubles.
-type ScenarioExecutorIface interface {
+// ScenarioExecutor is implemented by defaultScenarioExecutor and any test doubles.
+type ScenarioExecutor interface {
 	ExecuteScenario(ctx context.Context, config *Config, spec *v1alpha1.WarmupConfigSpec) *Result
 }
 
-// Ensure ScenarioExecutor implements ScenarioExecutorIface.
-var _ ScenarioExecutorIface = (*ScenarioExecutor)(nil)
+// Ensure defaultScenarioExecutor implements ScenarioExecutor.
+var _ ScenarioExecutor = (*defaultScenarioExecutor)(nil)
 
-// ScenarioExecutorOption is a functional option for ScenarioExecutor.
-type ScenarioExecutorOption func(*ScenarioExecutor)
+// ScenarioExecutorOption is a functional option for defaultScenarioExecutor.
+type ScenarioExecutorOption func(*defaultScenarioExecutor)
 
-// WithScenarioRateLimiter sets the shared rate limiter on the ScenarioExecutor.
+// WithScenarioRateLimiter sets the shared rate limiter on the defaultScenarioExecutor.
 // Passing nil disables rate limiting.
 func WithScenarioRateLimiter(rl *RequestRateLimiter) ScenarioExecutorOption {
-	return func(e *ScenarioExecutor) {
+	return func(e *defaultScenarioExecutor) {
 		e.rateLimiter = rl
 	}
 }
 
-// ScenarioExecutor orchestrates multi-step, scenario-based warmup defined in a
+// defaultScenarioExecutor orchestrates multi-step, scenario-based warmup defined in a
 // WarmupConfig CRD. Steps are executed sequentially; within a step, requests are
 // executed sequentially with optional {{varName}} interpolation from prior responses.
-type ScenarioExecutor struct {
+type defaultScenarioExecutor struct {
 	logger      logr.Logger
 	rateLimiter *RequestRateLimiter
 	httpClient  *http.Client
 }
 
 // NewScenarioExecutor creates a new ScenarioExecutor.
-func NewScenarioExecutor(logger logr.Logger, opts ...ScenarioExecutorOption) *ScenarioExecutor {
-	e := &ScenarioExecutor{
+func NewScenarioExecutor(logger logr.Logger, opts ...ScenarioExecutorOption) *defaultScenarioExecutor {
+	e := &defaultScenarioExecutor{
 		logger: logger,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -61,7 +62,7 @@ func NewScenarioExecutor(logger logr.Logger, opts ...ScenarioExecutorOption) *Sc
 }
 
 // ExecuteScenario runs all steps in spec sequentially and returns a combined Result.
-func (e *ScenarioExecutor) ExecuteScenario(
+func (e *defaultScenarioExecutor) ExecuteScenario(
 	ctx context.Context,
 	config *Config,
 	spec *v1alpha1.WarmupConfigSpec,
@@ -79,6 +80,9 @@ func (e *ScenarioExecutor) ExecuteScenario(
 		if d, err := time.ParseDuration(spec.Timeout); err == nil && d > 0 {
 			overallTimeout = d
 		}
+	}
+	if overallTimeout > maxScenarioTimeout {
+		overallTimeout = maxScenarioTimeout
 	}
 
 	scenarioCtx, cancel := context.WithTimeout(ctx, overallTimeout)
@@ -139,7 +143,7 @@ func (e *ScenarioExecutor) ExecuteScenario(
 }
 
 // executeStep runs all requests in a step sequentially and returns (completed, failed).
-func (e *ScenarioExecutor) executeStep(
+func (e *defaultScenarioExecutor) executeStep(
 	ctx context.Context,
 	config *Config,
 	step v1alpha1.WarmupStep,
@@ -178,6 +182,7 @@ func (e *ScenarioExecutor) executeStep(
 		}
 
 		var lastBody []byte
+		httpSender := &HTTPSender{client: e.httpClient, logger: e.logger}
 		for i := 0; i < count; i++ {
 			if ctx.Err() != nil {
 				break
@@ -203,9 +208,6 @@ func (e *ScenarioExecutor) executeStep(
 				if endpoint == "" {
 					endpoint = DefaultEndpointPath
 				}
-				if !strings.HasPrefix(endpoint, "/") {
-					endpoint = "/" + endpoint
-				}
 				body := []byte(session.Interpolate(req.Body))
 
 				interpolatedHeaders := make(map[string]string, len(req.Headers)+2)
@@ -220,8 +222,8 @@ func (e *ScenarioExecutor) executeStep(
 					method = http.MethodGet
 				}
 
-				resp = (&HTTPSender{client: e.httpClient, logger: e.logger}).Send(ctx, Target{
-					Address: fmt.Sprintf("http://%s:%d%s", config.PodIP, config.Port, endpoint),
+				resp = httpSender.Send(ctx, Target{
+					Address: config.BuildEndpointURLFor(endpoint),
 					Method:  method,
 					Headers: interpolatedHeaders,
 					Payload: body,
@@ -248,7 +250,7 @@ func (e *ScenarioExecutor) executeStep(
 
 		// Extract session variables from the last response body.
 		if len(req.Extract) > 0 && len(lastBody) > 0 {
-			e.extractVariables(lastBody, req.Extract, session, reqName)
+			extractVariables(lastBody, req.Extract, session, e.logger, reqName)
 		}
 	}
 	return completed, failed
@@ -267,16 +269,16 @@ func isSuccess(statusCode, expectedStatus int, protocol string) bool {
 
 // extractVariables parses body as JSON and stores matched JSONPath values in session.
 // Only supports simple dot-paths of the form $.key or $.a.b (no arrays, no filters).
-func (e *ScenarioExecutor) extractVariables(body []byte, extract map[string]string, session *SessionContext, reqName string) {
+func extractVariables(body []byte, extract map[string]string, session *SessionContext, logger logr.Logger, reqName string) {
 	var doc map[string]any
 	if err := json.Unmarshal(body, &doc); err != nil {
-		e.logger.V(1).Info("extract: response body is not valid JSON", "request", reqName)
+		logger.V(1).Info("extract: response body is not valid JSON", "request", reqName)
 		return
 	}
 	for varName, path := range extract {
 		val, err := jsonPathLookup(doc, path)
 		if err != nil {
-			e.logger.V(1).Info("extract: JSONPath lookup failed",
+			logger.V(1).Info("extract: JSONPath lookup failed",
 				"request", reqName, "var", varName, "path", path, "error", err)
 			continue
 		}
