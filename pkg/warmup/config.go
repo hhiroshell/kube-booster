@@ -213,3 +213,15 @@ func (c *Config) BuildEndpointURL() string {
 	}
 	return fmt.Sprintf("http://%s:%d%s", c.PodIP, c.Port, endpoint)
 }
+
+// BuildEndpointURLFor constructs the full URL for a given endpoint path.
+// Empty paths default to "/" and a missing leading slash is added automatically.
+func (c *Config) BuildEndpointURLFor(endpoint string) string {
+	if endpoint == "" {
+		endpoint = "/"
+	}
+	if endpoint[0] != '/' {
+		endpoint = "/" + endpoint
+	}
+	return fmt.Sprintf("http://%s:%d%s", c.PodIP, c.Port, endpoint)
+}
