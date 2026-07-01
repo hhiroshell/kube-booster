@@ -2,6 +2,7 @@ package warmup
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -38,6 +39,8 @@ func (sc *SessionContext) Get(key string) (any, bool) {
 
 // Interpolate replaces every {{varName}} token in s with the string representation
 // of the corresponding session value. Tokens referencing unknown keys are left as-is.
+// Keys are processed in sorted order so that a substituted value can never introduce
+// a {{key}} token that is then re-substituted by a later key (template injection).
 // Safe for concurrent use.
 func (sc *SessionContext) Interpolate(s string) string {
 	if !strings.Contains(s, "{{") {
@@ -45,8 +48,13 @@ func (sc *SessionContext) Interpolate(s string) string {
 	}
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
-	for k, v := range sc.data {
-		s = strings.ReplaceAll(s, "{{"+k+"}}", fmt.Sprintf("%v", v))
+	keys := make([]string, 0, len(sc.data))
+	for k := range sc.data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		s = strings.ReplaceAll(s, "{{"+k+"}}", fmt.Sprintf("%v", sc.data[k]))
 	}
 	return s
 }
