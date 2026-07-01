@@ -47,7 +47,8 @@ func (s *HTTPSender) Send(ctx context.Context, target Target) *Response {
 		return &Response{Error: err, Duration: duration}
 	}
 
-	body, readErr := io.ReadAll(resp.Body)
+	const maxResponseBodyBytes = 1 << 20 // 1 MiB cap prevents unbounded memory use
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
 	if readErr != nil {
 		s.logger.V(2).Info("failed to read response body", "error", readErr)
 	}
