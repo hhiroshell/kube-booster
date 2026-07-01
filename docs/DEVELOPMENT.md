@@ -274,7 +274,8 @@ kube-booster/
 │   │   ├── sample_deployment.yaml
 │   │   ├── sample_grpc_deployment.yaml     # gRPC warmup example
 │   │   ├── sample_warmup_config.yaml       # WarmupConfig CRD example
-│   │   └── sample_scenario_deployment.yaml # Deployment referencing WarmupConfig
+│   │   ├── sample_scenario_deployment.yaml # Deployment referencing WarmupConfig
+│   │   └── grafana-dashboard.json          # Sample Grafana dashboard
 │   └── kustomization.yaml       # Kustomize config
 ├── hack/
 │   ├── generate_certs.sh        # Certificate generation
@@ -458,6 +459,7 @@ In this architecture, both webhook and controller run in a single deployment:
 - `Target.Payload` bytes are sent as the request body when non-empty
 - Per-request timeout: 10s via `http.Client.Timeout`
 - Response body is captured in `Response.Body` for scenario response chaining
+- Custom headers: `User-Agent: kube-booster/1.0`, `X-Warmup-Request: true`
 
 **grpc_sender.go**
 - `GRPCSender` sends a single gRPC unary call using dynamic proto reflection

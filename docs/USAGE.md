@@ -262,7 +262,7 @@ For applications that need multi-step warmup (e.g. load a cache, prime a recomme
 - **Response chaining**: extract JSON values from one response and inject them into the next request via `{{varName}}` interpolation
 - **Arbitrary HTTP methods** (GET, POST, PUT, etc.) with request bodies
 - **gRPC steps** mixed with HTTP steps in the same scenario
-- **Repeat count** per request to hit JIT compile thresholds
+- **Repeat count** per request to warm up caches or trigger runtime optimization thresholds
 
 **Usage:**
 
@@ -296,6 +296,8 @@ spec:
         - endpoint: /api/recs/prime
           method: POST
           headers:
+            # NOTE: in production, use a dedicated warmup service account or
+            # short-lived credential rather than hardcoding tokens here.
             Authorization: "Bearer {{token}}"  # interpolated from step 1
           body: '{"userId":"warmup"}'
 
@@ -303,7 +305,7 @@ spec:
       requests:
         - endpoint: /health
           expectedStatus: 200
-          count: 3   # send 3 requests to trigger JIT compilation
+          count: 3   # send 3 requests to warm up caches
 ```
 
 2. Reference the `WarmupConfig` from your pod template:
@@ -335,7 +337,7 @@ See [`config/samples/sample_warmup_config.yaml`](../config/samples/sample_warmup
 
 **JSONPath extraction limitations:** Only simple dot-paths are supported (`$.key`, `$.a.b`). Array indexing and filter expressions are not supported.
 
-**Fail-open behavior:** If a step times out or a request fails, the scenario continues. The final result is fail-open just like single-endpoint warmup — the pod is marked READY regardless. If the `WarmupConfig` CR is not found, the controller falls back to annotation-based warmup with a `WarmupFailed` warning event.
+**Fail-open behavior:** If a step times out or a request fails, the scenario continues. The final result is fail-open just like single-endpoint warmup — the pod is marked READY regardless. If the `WarmupConfig` CR is not found, the controller emits a `WarmupFailed` warning event and fails open (pod is still marked READY); it does not fall back to annotation-based warmup.
 
 ### Controller Flags
 
