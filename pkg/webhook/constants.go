@@ -31,6 +31,11 @@ const (
 	// ConditionTypeWarmupReady is the condition type for warmup readiness
 	ConditionTypeWarmupReady = "kube-booster.io/warmup-ready"
 
+	// AnnotationWarmupConfig is the annotation key referencing a WarmupConfig CR by name.
+	// When set, the controller fetches the named WarmupConfig from the pod's namespace
+	// and uses scenario-based warmup instead of the annotation-based single-endpoint warmup.
+	AnnotationWarmupConfig = "kube-booster.io/warmup-config"
+
 	// WarmupEnabledValue is the value that enables warmup
 	WarmupEnabledValue = "enabled"
 )

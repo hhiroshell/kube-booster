@@ -16,6 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	v1alpha1 "github.com/hhiroshell/kube-booster/pkg/api/v1alpha1"
 	"github.com/hhiroshell/kube-booster/pkg/warmup"
 	"github.com/hhiroshell/kube-booster/pkg/webhook"
 )
@@ -617,6 +618,177 @@ func TestPodReconciler_WarmupIntegration(t *testing.T) {
 
 func hasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+// makeReadyPod returns a pod in Running phase with containers ready and the
+// warmup readiness gate present. An optional warmup-config annotation is
+// supported.
+func makeReadyPod(name, namespace string, extraAnnotations map[string]string) *corev1.Pod {
+	annotations := map[string]string{
+		webhook.AnnotationWarmupEnabled: "enabled",
+		webhook.AnnotationWarmupPort:    "8080",
+	}
+	for k, v := range extraAnnotations {
+		annotations[k] = v
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   namespace,
+			Annotations: annotations,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "app", Image: "nginx"}},
+			ReadinessGates: []corev1.PodReadinessGate{
+				{ConditionType: corev1.PodConditionType(webhook.ReadinessGateName)},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			PodIP: "10.0.0.1",
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.ContainersReady, Status: corev1.ConditionTrue},
+			},
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "app", Ready: true}},
+		},
+	}
+}
+
+func TestPodReconciler_ScenarioDispatch(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)   //nolint:errcheck // scheme registration never fails
+	_ = v1alpha1.AddToScheme(scheme) //nolint:errcheck // scheme registration never fails
+
+	warmupCfg := &v1alpha1.WarmupConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-warmup",
+			Namespace: "default",
+		},
+		Spec: v1alpha1.WarmupConfigSpec{
+			Steps: []v1alpha1.WarmupStep{
+				{Requests: []v1alpha1.WarmupRequest{{Endpoint: "/warmup"}}},
+			},
+		},
+	}
+
+	t.Run("WarmupConfig found uses ScenarioExecutor", func(t *testing.T) {
+		pod := makeReadyPod("test-pod", "default", map[string]string{
+			webhook.AnnotationWarmupConfig: "my-warmup",
+		})
+
+		mockScenario := &warmup.MockScenarioExecutor{}
+		mockExec := &warmup.MockExecutor{}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(pod, warmupCfg).
+			WithStatusSubresource(pod).
+			Build()
+
+		reconciler := &PodReconciler{
+			Client:           fakeClient,
+			Scheme:           scheme,
+			WarmupExecutor:   mockExec,
+			ScenarioExecutor: mockScenario,
+			Recorder:         events.NewFakeRecorder(100),
+		}
+
+		_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "test-pod", Namespace: "default"},
+		})
+		if err != nil {
+			t.Fatalf("Reconcile() error = %v", err)
+		}
+
+		if !mockScenario.Called {
+			t.Error("expected ScenarioExecutor.ExecuteScenario to be called")
+		}
+	})
+
+	t.Run("WarmupConfig not found fails open without calling WarmupExecutor", func(t *testing.T) {
+		pod := makeReadyPod("test-pod", "default", map[string]string{
+			webhook.AnnotationWarmupConfig: "does-not-exist",
+		})
+
+		mockScenario := &warmup.MockScenarioExecutor{}
+		mockExec := &warmup.MockExecutor{}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(pod). // warmupCfg NOT present
+			WithStatusSubresource(pod).
+			Build()
+
+		fakeRec := events.NewFakeRecorder(100)
+		reconciler := &PodReconciler{
+			Client:           fakeClient,
+			Scheme:           scheme,
+			WarmupExecutor:   mockExec,
+			ScenarioExecutor: mockScenario,
+			Recorder:         fakeRec,
+		}
+
+		_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "test-pod", Namespace: "default"},
+		})
+		if err != nil {
+			t.Fatalf("Reconcile() error = %v", err)
+		}
+
+		if mockScenario.Called {
+			t.Error("ScenarioExecutor should NOT be called when WarmupConfig is missing")
+		}
+		if mockExec.Called {
+			t.Error("WarmupExecutor should NOT be called as fallback when WarmupConfig is missing")
+		}
+
+		// Expect a Warning event mentioning the missing WarmupConfig name.
+		// FakeRecorder format: "EventType Reason Message" (action is not recorded).
+		close(fakeRec.Events)
+		var foundWarning bool
+		for ev := range fakeRec.Events {
+			if strings.Contains(ev, "Warning") &&
+				strings.Contains(ev, ReasonWarmupFailed) &&
+				strings.Contains(ev, "does-not-exist") {
+				foundWarning = true
+			}
+		}
+		if !foundWarning {
+			t.Error("expected Warning/WarmupFailed event mentioning the missing WarmupConfig name")
+		}
+	})
+
+	t.Run("annotation-based warmup: uses WarmupExecutor when no WarmupConfigName is set", func(t *testing.T) {
+		pod := makeReadyPod("test-pod", "default", nil)
+
+		mockScenario := &warmup.MockScenarioExecutor{}
+		mockExec := &warmup.MockExecutor{}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		reconciler := &PodReconciler{
+			Client:           fakeClient,
+			Scheme:           scheme,
+			WarmupExecutor:   mockExec,
+			ScenarioExecutor: mockScenario,
+			Recorder:         events.NewFakeRecorder(100),
+		}
+
+		_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "test-pod", Namespace: "default"},
+		})
+		if err != nil {
+			t.Fatalf("Reconcile() error = %v", err)
+		}
+
+		if mockScenario.Called {
+			t.Error("ScenarioExecutor should NOT be called when no warmup-config annotation is set")
+		}
+	})
 }
 
 // slowMockExecutor blocks until released, then returns success.

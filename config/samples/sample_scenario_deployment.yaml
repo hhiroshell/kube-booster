@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+      annotations:
+        # Enable warmup using a WarmupConfig CR instead of inline annotations.
+        kube-booster.io/warmup: "enabled"
+        kube-booster.io/warmup-config: "my-app-warmup"
+
+        # warmup-port is still required (or auto-detected from the container spec)
+        # so the controller knows which port to send requests to.
+        kube-booster.io/warmup-port: "8080"
+    spec:
+      containers:
+        - name: my-app
+          image: nginx:1.25
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP

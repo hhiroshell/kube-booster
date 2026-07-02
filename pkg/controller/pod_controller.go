@@ -10,11 +10,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	v1alpha1 "github.com/hhiroshell/kube-booster/pkg/api/v1alpha1"
 	"github.com/hhiroshell/kube-booster/pkg/metrics"
 	"github.com/hhiroshell/kube-booster/pkg/warmup"
 	"github.com/hhiroshell/kube-booster/pkg/webhook"
@@ -32,10 +34,11 @@ const (
 // PodReconciler reconciles pods with warmup readiness gates
 type PodReconciler struct {
 	client.Client
-	Scheme          *runtime.Scheme
-	WarmupExecutor  warmup.Executor
-	Recorder        events.EventRecorder
-	WarmupSemaphore *semaphore.Weighted // nil = unlimited concurrency
+	Scheme           *runtime.Scheme
+	WarmupExecutor   warmup.Executor
+	ScenarioExecutor warmup.ScenarioExecutor // nil = CRD-based warmup disabled
+	Recorder         events.EventRecorder
+	WarmupSemaphore  *semaphore.Weighted // nil = unlimited concurrency
 }
 
 // Reconcile handles pod reconciliation
@@ -151,10 +154,31 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	defer cancel()
 
 	var result *warmup.Result
-	if r.WarmupExecutor != nil {
+	recordMetrics := true
+	if config.WarmupConfigName != "" && r.ScenarioExecutor != nil {
+		warmupCfg := &v1alpha1.WarmupConfig{}
+		if err := r.Get(warmupCtx, types.NamespacedName{
+			Name:      config.WarmupConfigName,
+			Namespace: pod.Namespace,
+		}, warmupCfg); err != nil {
+			// WarmupConfig not found: emit a warning and fail the warmup (fail-open means pod
+			// is still marked READY by the condition update below, consistent with other failures).
+			logger.Error(err, "WarmupConfig not found, failing open",
+				"warmupConfig", config.WarmupConfigName)
+			r.Recorder.Eventf(pod, nil, corev1.EventTypeWarning, ReasonWarmupFailed, "LookupWarmupConfig",
+				"WarmupConfig %q not found: %v", config.WarmupConfigName, err)
+			result = &warmup.Result{
+				Success: false,
+				Error:   err,
+				Message: fmt.Sprintf("WarmupConfig %q not found", config.WarmupConfigName),
+			}
+		} else {
+			result = r.ScenarioExecutor.ExecuteScenario(warmupCtx, config, &warmupCfg.Spec)
+		}
+	} else if r.WarmupExecutor != nil {
 		result = r.WarmupExecutor.Execute(warmupCtx, config)
 	} else {
-		// No executor configured, skip warmup
+		recordMetrics = false
 		result = &warmup.Result{
 			Success: true,
 			Message: "warmup skipped: no executor configured",
@@ -163,7 +187,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	// Record warmup metrics (skip when no executor, as no actual warmup was performed)
-	if r.WarmupExecutor != nil {
+	if recordMetrics {
 		metrics.RecordWarmupResult(pod.Namespace, result.Success, result.TotalDuration.Seconds())
 		metrics.RecordWarmupRequests(pod.Namespace, result.RequestsCompleted+result.RequestsFailed)
 	}

@@ -224,6 +224,11 @@ kube-booster/
 │   └── controller/
 │       └── main.go              # Main entry point
 ├── pkg/
+│   ├── api/
+│   │   └── v1alpha1/
+│   │       ├── types.go          # WarmupConfig, WarmupStep, WarmupRequest Go types
+│   │       ├── register.go       # Scheme registration (AddToScheme)
+│   │       └── deepcopy.go       # Hand-written DeepCopy* methods
 │   ├── controller/
 │   │   ├── pod_controller.go     # Reconciler implementation
 │   │   ├── pod_controller_test.go
@@ -236,12 +241,16 @@ kube-booster/
 │   │   ├── config_test.go
 │   │   ├── grpc_sender.go        # GRPCSender: gRPC warmup via server reflection
 │   │   ├── grpc_sender_test.go
-│   │   ├── http_sender.go        # HTTPSender: single HTTP GET request
+│   │   ├── http_sender.go        # HTTPSender: HTTP warmup (GET/POST/etc. + body)
 │   │   ├── http_sender_test.go
-│   │   ├── mock.go               # MockSender for testing
+│   │   ├── mock.go               # MockExecutor / MockScenarioExecutor for testing
 │   │   ├── rate_limiter.go       # Nil-safe RPS rate limiter wrapper
 │   │   ├── result.go             # Warmup result structure
+│   │   ├── scenario_executor.go  # ScenarioExecutor: multi-step CRD-based warmup
+│   │   ├── scenario_executor_test.go
 │   │   ├── sender.go             # Sender interface and Target/Response types
+│   │   ├── session.go            # SessionContext: thread-safe {{varName}} interpolation
+│   │   ├── session_test.go
 │   │   ├── warmup_executor.go    # WarmupExecutor: dispatches to HTTP or gRPC sender
 │   │   └── warmup_executor_test.go
 │   └── webhook/
@@ -249,6 +258,8 @@ kube-booster/
 │       ├── pod_mutator.go        # Webhook handler
 │       └── pod_mutator_test.go
 ├── config/
+│   ├── crd/                     # Custom Resource Definitions
+│   │   └── warmupconfig.yaml     # WarmupConfig CRD manifest
 │   ├── rbac/                    # RBAC manifests
 │   │   ├── service_account.yaml
 │   │   ├── role.yaml
@@ -261,11 +272,14 @@ kube-booster/
 │   │   └── daemonset.yaml        # Controller DaemonSet (node-local)
 │   ├── samples/                 # Sample applications
 │   │   ├── sample_deployment.yaml
-│   │   ├── sample_grpc_deployment.yaml  # gRPC warmup example
-│   │   └── grafana-dashboard.json  # Sample Grafana dashboard
+│   │   ├── sample_grpc_deployment.yaml     # gRPC warmup example
+│   │   ├── sample_warmup_config.yaml       # WarmupConfig CRD example
+│   │   ├── sample_scenario_deployment.yaml # Deployment referencing WarmupConfig
+│   │   └── grafana-dashboard.json          # Sample Grafana dashboard
 │   └── kustomization.yaml       # Kustomize config
 ├── hack/
 │   ├── generate_certs.sh        # Certificate generation
+│   ├── grpc-demo-server/        # Minimal gRPC demo server for testing
 │   └── quick_test.sh            # Smoke tests
 ├── Dockerfile                   # Multi-stage build
 ├── Makefile                     # Build automation
@@ -440,8 +454,11 @@ In this architecture, both webhook and controller run in a single deployment:
 - Context-aware cancellation support
 
 **http_sender.go**
-- `HTTPSender` sends a single HTTP GET request
+- `HTTPSender` sends a single HTTP request (any method with optional body)
+- Method defaults to `GET` when `Target.Method` is empty
+- `Target.Payload` bytes are sent as the request body when non-empty
 - Per-request timeout: 10s via `http.Client.Timeout`
+- Response body is captured in `Response.Body` for scenario response chaining
 - Custom headers: `User-Agent: kube-booster/1.0`, `X-Warmup-Request: true`
 
 **grpc_sender.go**
@@ -462,10 +479,26 @@ In this architecture, both webhook and controller run in a single deployment:
   - `kube-booster.io/warmup-port` → Port (auto-detected if possible)
   - `kube-booster.io/warmup-grpc-method` → gRPC method (`package.Service/Method`), required for gRPC
   - `kube-booster.io/warmup-grpc-payload` → JSON payload for gRPC request (default: `{}`)
+- `kube-booster.io/warmup-config` → Name of a `WarmupConfig` CR (enables scenario executor)
 - Validates `warmup-grpc-method` format and `warmup-grpc-payload` JSON validity at parse time
 - Auto-detects port from container spec (single container, single port)
 - `BuildEndpointURL()` constructs full URL for HTTP requests
 - `BuildGRPCAddress()` constructs `host:port` for gRPC dial
+
+**scenario_executor.go**
+- `ScenarioExecutorIface` interface: `ExecuteScenario(ctx, config, spec) *Result`
+- `ScenarioExecutor` orchestrates multi-step warmup defined in a `WarmupConfig` CR
+- Steps execute sequentially; within a step, requests execute in order
+- Per-request `{{varName}}` interpolation via `SessionContext`
+- JSON response extraction: simple dot-path only (`$.key`, `$.a.b`; no arrays or filters)
+- Per-step and overall context timeouts; step timeout expiry is fail-open (next step continues)
+- Reuses `HTTPSender` (arbitrary method + body) and `GRPCSender` (new per step for method isolation)
+- Rate-limited via shared `RequestRateLimiter` (same pool as `WarmupExecutor`)
+
+**session.go**
+- `SessionContext` is a thread-safe `map[string]any` with `Set`, `Get`, and `Interpolate` methods
+- `Interpolate(s)` replaces `{{varName}}` tokens; unknown keys are left unchanged
+- Safe for concurrent use via `sync.RWMutex` (future-proofed for parallel step execution)
 
 **result.go**
 - `Result` struct tracks warmup outcome:

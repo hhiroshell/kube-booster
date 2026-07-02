@@ -409,8 +409,8 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 - ~~gRPC warmup support~~ ✅ Implemented (unary RPCs via server reflection, plaintext)
 - ~~Prometheus metrics export~~ ✅ Implemented
 - ~~Kubernetes events for warmup results~~ ✅ Implemented
-- CRD support for complex warmup scenarios (`WarmupConfig`)
-- Multiple sequential warmup endpoints
+- ~~CRD support for complex warmup scenarios (`WarmupConfig`)~~ ✅ Implemented (multi-step, response chaining, `{{varName}}` interpolation)
+- ~~Multiple sequential warmup endpoints~~ ✅ Implemented via WarmupConfig steps
 - Retry logic with exponential backoff (currently single attempt)
 - Optional TLS for gRPC warmup (tracked in issue #60)
 - Cross-pod gRPC connection pooling / Sender factory (tracked in issue #61)
@@ -423,12 +423,13 @@ Implemented for controller-runtime v0.23.0 with latest APIs:
 ## File Summary
 
 **Go Code:**
-- 5 packages: webhook, controller, warmup, metrics, main
-- 19 Go source files (9 test files)
-- warmup package: `sender.go`, `warmup_executor.go`, `http_sender.go`, `grpc_sender.go`, `mock.go`, `config.go`, `rate_limiter.go`, `result.go`
+- 6 packages: api/v1alpha1, webhook, controller, warmup, metrics, main
+- 27 Go source files (13 test files)
+- warmup package: `sender.go`, `warmup_executor.go`, `http_sender.go`, `grpc_sender.go`, `scenario_executor.go`, `session.go`, `mock.go`, `config.go`, `rate_limiter.go`, `result.go`
+- api/v1alpha1 package: `types.go`, `register.go`, `deepcopy.go`
 
 **Kubernetes Manifests:**
-- 10 YAML files (added `config/samples/sample_grpc_deployment.yaml`)
+- 13 YAML files (added `config/crd/warmupconfig.yaml`, `config/samples/sample_warmup_config.yaml`, `config/samples/sample_scenario_deployment.yaml`)
 - Complete deployment configuration
 - Sample applications (HTTP and gRPC)
 
@@ -444,9 +445,9 @@ Future enhancements:
 1. ~~**gRPC Support**: Add gRPC warmup request capability~~ ✅ Implemented
 2. ~~**Prometheus Metrics**: Export warmup metrics for monitoring dashboards~~ ✅ Implemented
 3. ~~**Kubernetes Events**: Record warmup results as pod events~~ ✅ Implemented
-4. **WarmupConfig CRD**: Support complex warmup scenarios with multiple endpoints
-5. **Retry Logic**: Add configurable retry with exponential backoff
-6. **Custom Request Bodies**: Support POST requests with custom payloads
+4. ~~**WarmupConfig CRD**: Support complex warmup scenarios with multiple endpoints~~ ✅ Implemented
+5. **Retry Logic**: Add configurable retry with exponential backoff (issue #68)
+6. ~~**Custom Request Bodies**: Support POST requests with custom payloads~~ ✅ Implemented via WarmupConfig
 7. **Health Check Integration**: Optionally use readiness probe path as default endpoint
 8. **Distributed Tracing**: Add trace context to warmup requests
 9. **Webhook Config Validation**: Validate warmup annotation values at admission time (issue #64)

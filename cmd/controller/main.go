@@ -20,6 +20,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	v1alpha1 "github.com/hhiroshell/kube-booster/pkg/api/v1alpha1"
 	"github.com/hhiroshell/kube-booster/pkg/controller"
 	_ "github.com/hhiroshell/kube-booster/pkg/metrics" // Register custom Prometheus metrics
 	"github.com/hhiroshell/kube-booster/pkg/warmup"
@@ -35,6 +36,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 }
 
 func main() {
@@ -133,6 +135,10 @@ func main() {
 	warmupExecutor := warmup.NewWarmupExecutor(ctrl.Log.WithName("warmup"),
 		warmup.WithRateLimiter(rateLimiter))
 
+	// Create scenario executor (for WarmupConfig CRD-based warmup)
+	scenarioExecutor := warmup.NewScenarioExecutor(ctrl.Log.WithName("scenario"),
+		warmup.WithScenarioRateLimiter(rateLimiter))
+
 	// Create semaphore (nil if maxConcurrentWarmups <= 0, meaning unlimited)
 	var warmupSemaphore *semaphore.Weighted
 	if maxConcurrentWarmups > 0 {
@@ -142,11 +148,12 @@ func main() {
 	// Setup pod controller (only if enabled)
 	if enableController {
 		if err = (&controller.PodReconciler{
-			Client:          mgr.GetClient(),
-			Scheme:          mgr.GetScheme(),
-			WarmupExecutor:  warmupExecutor,
-			Recorder:        mgr.GetEventRecorder("kube-booster-controller"),
-			WarmupSemaphore: warmupSemaphore,
+			Client:           mgr.GetClient(),
+			Scheme:           mgr.GetScheme(),
+			WarmupExecutor:   warmupExecutor,
+			ScenarioExecutor: scenarioExecutor,
+			Recorder:         mgr.GetEventRecorder("kube-booster-controller"),
+			WarmupSemaphore:  warmupSemaphore,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "Pod")
 			os.Exit(1)

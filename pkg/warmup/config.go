@@ -68,6 +68,11 @@ type Config struct {
 
 	// GRPCPayload is the JSON-encoded request payload for gRPC warmup, defaults to "{}"
 	GRPCPayload string
+
+	// WarmupConfigName is the name of a WarmupConfig CR in the pod's namespace.
+	// When non-empty, the controller uses scenario-based warmup instead of the
+	// single-endpoint annotation-based warmup.
+	WarmupConfigName string
 }
 
 // ParseConfig parses warmup configuration from pod annotations
@@ -154,6 +159,11 @@ func ParseConfig(pod *corev1.Pod) (*Config, error) {
 				webhook.AnnotationWarmupGRPCMethod, webhook.AnnotationWarmupProtocol, ProtocolGRPC)
 		}
 
+		// Parse WarmupConfig reference
+		if name, ok := annotations[webhook.AnnotationWarmupConfig]; ok && name != "" {
+			config.WarmupConfigName = name
+		}
+
 		// Parse port from annotation
 		if portStr, ok := annotations[webhook.AnnotationWarmupPort]; ok && portStr != "" {
 			port, err := strconv.Atoi(portStr)
@@ -199,6 +209,18 @@ func (c *Config) BuildEndpointURL() string {
 	endpoint := c.Endpoint
 	// Ensure endpoint starts with /
 	if len(endpoint) == 0 || endpoint[0] != '/' {
+		endpoint = "/" + endpoint
+	}
+	return fmt.Sprintf("http://%s:%d%s", c.PodIP, c.Port, endpoint)
+}
+
+// BuildEndpointURLFor constructs the full URL for a given endpoint path.
+// Empty paths default to "/" and a missing leading slash is added automatically.
+func (c *Config) BuildEndpointURLFor(endpoint string) string {
+	if endpoint == "" {
+		endpoint = "/"
+	}
+	if endpoint[0] != '/' {
 		endpoint = "/" + endpoint
 	}
 	return fmt.Sprintf("http://%s:%d%s", c.PodIP, c.Port, endpoint)
