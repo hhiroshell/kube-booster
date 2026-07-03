@@ -24,12 +24,14 @@ var (
 		[]string{"namespace"},
 	)
 
-	// WarmupDurationSeconds is a histogram tracking time from warmup start to completion
+	// WarmupDurationSeconds is a histogram tracking time from warmup start to completion.
+	// Buckets extend to 120s so histogram_quantile gives accurate results up to and beyond
+	// the KubeBoosterSlowWarmup alert threshold of 60s.
 	WarmupDurationSeconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "kube_booster_warmup_duration_seconds",
 			Help:    "Time from warmup start to completion",
-			Buckets: prometheus.DefBuckets,
+			Buckets: []float64{.5, 1, 2.5, 5, 10, 15, 30, 45, 60, 90, 120},
 		},
 		[]string{"namespace"},
 	)
