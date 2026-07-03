@@ -40,7 +40,7 @@ metadata:
 data:
   prometheus.yml: |
     global:
-      scrape_interval: 15s
+      scrape_interval: 15s      # increase to 30s or 60s for large clusters
       evaluation_interval: 15s
 
     rule_files:
@@ -180,7 +180,8 @@ spec:
         configMap:
           name: prometheus-config
       - name: storage
-        emptyDir: {}
+        emptyDir: {}  # ephemeral — for production use a PersistentVolumeClaim
+                      # and pass --storage.tsdb.retention.size to Prometheus
 ---
 apiVersion: v1
 kind: Service
@@ -224,7 +225,7 @@ data:
       - name: kube-booster
         type: file
         options:
-          path: /var/lib/grafana/dashboards
+          path: /var/lib/grafana/dashboards  # must match mountPath for grafana-dashboard-kube-booster in the Grafana Deployment
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -1106,6 +1107,8 @@ spec:
         - containerPort: 3000
           name: web
         env:
+        # For development/demo only — disable anonymous access and configure
+        # proper authentication before deploying to shared or production clusters.
         - name: GF_AUTH_ANONYMOUS_ENABLED
           value: "true"
         - name: GF_AUTH_ANONYMOUS_ORG_ROLE
