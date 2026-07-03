@@ -7,32 +7,29 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: prometheus
+  name: kube-booster-prometheus
   namespace: monitoring
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: prometheus
+  name: kube-booster-prometheus
 rules:
 - apiGroups: [""]
   resources: ["pods", "nodes", "endpoints", "services"]
   verbs: ["get", "list", "watch"]
-- apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: prometheus
+  name: kube-booster-prometheus
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: prometheus
+  name: kube-booster-prometheus
 subjects:
 - kind: ServiceAccount
-  name: prometheus
+  name: kube-booster-prometheus
   namespace: monitoring
 ---
 apiVersion: v1
@@ -133,7 +130,7 @@ spec:
       labels:
         app: prometheus
     spec:
-      serviceAccountName: prometheus
+      serviceAccountName: kube-booster-prometheus
       containers:
       - name: prometheus
         image: prom/prometheus:v3.4.1
