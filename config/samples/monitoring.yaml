@@ -68,6 +68,17 @@ data:
 
   rules.yaml: |
     groups:
+      - name: kube-booster-recording
+        interval: 15s
+        rules:
+          - record: kube_booster_warmup_total:rate5m
+            expr: sum(rate(kube_booster_warmup_total[5m])) by (namespace, result)
+          - record: kube_booster_warmup_duration_seconds_bucket:rate5m
+            expr: sum(rate(kube_booster_warmup_duration_seconds_bucket[5m])) by (le, namespace)
+          - record: kube_booster_warmup_queue_wait_seconds_bucket:rate5m
+            expr: sum(rate(kube_booster_warmup_queue_wait_seconds_bucket[5m])) by (le, namespace)
+          - record: kube_booster_warmup_requests_total:rate5m
+            expr: sum(rate(kube_booster_warmup_requests_total[5m])) by (namespace)
       - name: kube-booster
         rules:
           - alert: KubeBoosterHighWarmupFailureRate
@@ -322,7 +333,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(kube_booster_warmup_total{result=\"success\", namespace=~\"$namespace\"}[5m])) / sum(rate(kube_booster_warmup_total{namespace=~\"$namespace\"}[5m]))",
+              "expr": "sum(kube_booster_warmup_total:rate5m{result=\"success\", namespace=~\"$namespace\"}) / sum(kube_booster_warmup_total:rate5m{namespace=~\"$namespace\"})",
               "legendFormat": "Success Rate",
               "refId": "A"
             }
@@ -442,7 +453,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(kube_booster_warmup_total{namespace=~\"$namespace\"}[5m])) by (result) * 60",
+              "expr": "sum(kube_booster_warmup_total:rate5m{namespace=~\"$namespace\"}) by (result) * 60",
               "legendFormat": "{{result}}",
               "refId": "A"
             }
@@ -532,7 +543,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(kube_booster_warmup_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+              "expr": "histogram_quantile(0.50, sum(kube_booster_warmup_duration_seconds_bucket:rate5m{namespace=~\"$namespace\"}) by (le))",
               "legendFormat": "P50",
               "refId": "A"
             },
@@ -541,7 +552,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(kube_booster_warmup_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+              "expr": "histogram_quantile(0.95, sum(kube_booster_warmup_duration_seconds_bucket:rate5m{namespace=~\"$namespace\"}) by (le))",
               "legendFormat": "P95",
               "refId": "B"
             },
@@ -550,7 +561,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(kube_booster_warmup_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+              "expr": "histogram_quantile(0.99, sum(kube_booster_warmup_duration_seconds_bucket:rate5m{namespace=~\"$namespace\"}) by (le))",
               "legendFormat": "P99",
               "refId": "C"
             }
@@ -648,7 +659,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(kube_booster_warmup_queue_wait_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+              "expr": "histogram_quantile(0.50, sum(kube_booster_warmup_queue_wait_seconds_bucket:rate5m{namespace=~\"$namespace\"}) by (le))",
               "legendFormat": "P50",
               "refId": "A"
             },
@@ -657,7 +668,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(kube_booster_warmup_queue_wait_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+              "expr": "histogram_quantile(0.95, sum(kube_booster_warmup_queue_wait_seconds_bucket:rate5m{namespace=~\"$namespace\"}) by (le))",
               "legendFormat": "P95",
               "refId": "B"
             },
@@ -666,7 +677,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(kube_booster_warmup_queue_wait_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+              "expr": "histogram_quantile(0.99, sum(kube_booster_warmup_queue_wait_seconds_bucket:rate5m{namespace=~\"$namespace\"}) by (le))",
               "legendFormat": "P99",
               "refId": "C"
             }
@@ -911,7 +922,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(kube_booster_warmup_requests_total{namespace=~\"$namespace\"}[5m]))",
+              "expr": "sum(kube_booster_warmup_requests_total:rate5m{namespace=~\"$namespace\"})",
               "legendFormat": "Request Rate",
               "refId": "A"
             }
@@ -1000,7 +1011,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(kube_booster_warmup_total{namespace=~\"$namespace\"}[5m])) by (namespace, result) * 60",
+              "expr": "sum(kube_booster_warmup_total:rate5m{namespace=~\"$namespace\"}) by (namespace, result) * 60",
               "legendFormat": "{{namespace}} - {{result}}",
               "refId": "A"
             }
