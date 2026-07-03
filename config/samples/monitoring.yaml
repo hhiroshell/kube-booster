@@ -80,6 +80,7 @@ data:
                 /
                 sum(rate(kube_booster_warmup_total[5m]))
               ) > 0.1
+              and sum(rate(kube_booster_warmup_total[5m])) > 0
             for: 5m
             labels:
               severity: warning
