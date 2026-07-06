@@ -236,7 +236,13 @@ groups:
 
 ## Grafana Dashboard
 
-A sample Grafana dashboard is provided at `config/samples/grafana-dashboard.json`. Import this dashboard to visualize:
+A sample Grafana dashboard is provided at `config/samples/monitoring/grafana-dashboard.json`. Deploy it along with Prometheus and Grafana using:
+
+```bash
+kubectl apply -k config/samples/monitoring/
+```
+
+This dashboard visualizes:
 
 - Warmup success/failure rate over time
 - Warmup duration histogram and percentiles
