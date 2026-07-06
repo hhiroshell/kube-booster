@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s      # increase to 30s or 60s for large clusters
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/rules.yaml
+
+scrape_configs:
+  - job_name: 'kube-booster'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      # Keep only kube-booster pods
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: kube-booster
+        action: keep
+      # Keep only the metrics port (8080)
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        regex: "8080"
+        action: keep
+      # Use pod name as instance label
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: instance
+      # Preserve namespace label
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: kubernetes_namespace
+

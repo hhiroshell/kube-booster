@@ -5,6 +5,13 @@ resources:
   - monitoring.yaml
 
 configMapGenerator:
+  - name: prometheus-config
+    namespace: monitoring
+    files:
+      - prometheus.yml=prometheus.yml
+      - rules.yaml=rules.yaml
+    options:
+      disableNameSuffixHash: true
   - name: grafana-dashboard-kube-booster
     namespace: monitoring
     files:
