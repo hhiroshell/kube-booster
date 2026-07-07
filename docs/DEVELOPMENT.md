@@ -275,7 +275,10 @@ kube-booster/
 │   │   ├── sample_grpc_deployment.yaml     # gRPC warmup example
 │   │   ├── sample_warmup_config.yaml       # WarmupConfig CRD example
 │   │   ├── sample_scenario_deployment.yaml # Deployment referencing WarmupConfig
-│   │   └── grafana-dashboard.json          # Sample Grafana dashboard
+│   │   └── monitoring/                     # Prometheus + Grafana monitoring example
+│   │       ├── kustomization.yaml          # kubectl apply -k config/samples/monitoring/
+│   │       ├── monitoring.yaml             # Namespace, Prometheus, Grafana manifests
+│   │       └── grafana-dashboard.json      # Grafana dashboard (source of truth)
 │   └── kustomization.yaml       # Kustomize config
 ├── hack/
 │   ├── generate_certs.sh        # Certificate generation

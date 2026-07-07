@@ -1,0 +1,56 @@
+groups:
+  - name: kube-booster-recording
+    interval: 15s
+    rules:
+      - record: kube_booster_warmup_total:rate5m
+        expr: sum(rate(kube_booster_warmup_total[5m])) by (namespace, result)
+      - record: kube_booster_warmup_duration_seconds_bucket:rate5m
+        expr: sum(rate(kube_booster_warmup_duration_seconds_bucket[5m])) by (le, namespace)
+      - record: kube_booster_warmup_queue_wait_seconds_bucket:rate5m
+        expr: sum(rate(kube_booster_warmup_queue_wait_seconds_bucket[5m])) by (le, namespace)
+      - record: kube_booster_warmup_requests_total:rate5m
+        expr: sum(rate(kube_booster_warmup_requests_total[5m])) by (namespace)
+  - name: kube-booster
+    rules:
+      - alert: KubeBoosterHighWarmupFailureRate
+        expr: |
+          (
+            sum(rate(kube_booster_warmup_total{result="failure"}[5m]))
+            /
+            sum(rate(kube_booster_warmup_total[5m]))
+          ) > 0.1
+          and sum(rate(kube_booster_warmup_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High warmup failure rate"
+          description: "More than 10% of warmups are failing in the last 5 minutes"
+      - alert: KubeBoosterSlowWarmup
+        expr: |
+          histogram_quantile(0.95, sum(rate(kube_booster_warmup_duration_seconds_bucket[5m])) by (le))
+          > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow warmup executions"
+          description: "P95 warmup duration is over 60 seconds"
+      - alert: KubeBoosterWarmupBacklog
+        expr: sum(kube_booster_warmup_active_pods) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Warmup backlog building up"
+          description: "More than 10 pods are actively executing warmup"
+      - alert: KubeBoosterHighSemaphoreWaitTime
+        expr: |
+          histogram_quantile(0.95, sum(rate(kube_booster_warmup_queue_wait_seconds_bucket[5m])) by (le))
+          > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High warmup semaphore wait time"
+          description: "P95 wait time for the warmup semaphore exceeds 10 seconds — consider increasing --max-concurrent-warmups"
